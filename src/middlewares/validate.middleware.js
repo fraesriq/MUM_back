@@ -1,3 +1,5 @@
+require('../config/zod');
+
 const validate = (schema, property = 'body') => (req, res, next) => {
   const result = schema.safeParse(req[property]);
   if (!result.success) {

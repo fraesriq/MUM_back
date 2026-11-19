@@ -2,20 +2,29 @@
   "name": "backend",
   "version": "1.0.0",
   "main": "src/server.js",
+  "bin": {
+    "mum-api-client": "bin/api-client.js"
+  },
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test",
+    "client": "node bin/api-client.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "cors": "^2.8.6",
     "dotenv": "^18.0.10",
     "express": "^5.3.0",
+    "express-rate-limit": "7.5.1",
     "helmet": "^8.3.0",
+    "jose": "6.2.13",
     "mysql2": "^3.24.6",
     "zod": "^4.6.7"
   },
