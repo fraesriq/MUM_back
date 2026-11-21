@@ -16,10 +16,9 @@ exports.update = async (id, data) => {
   return repo.update(id, data);
 };
 
-exports.aprobar = async (id, { estado, motivo }) => {
+exports.aprobar = async (id, { estado }) => {
   await exports.getById(id);
   return repo.update(id, { estado });
-  // si tienes tabla de auditoría, aquí guardas el motivo
 };
 
 exports.remove = async (id) => {
