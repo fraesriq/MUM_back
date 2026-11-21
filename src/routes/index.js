@@ -6,11 +6,13 @@ const especiesRoutes = require('../modules/especies/especies.routes');
 const lugaresRoutes = require('../modules/lugares/lugares.routes');
 const galeriaRoutes    = require('../modules/galeria/galeria.routes');
 const contenidosRoutes = require('../modules/contenidos/contenidos.routes');
+const archivosRoutes = require('../modules/archivos/archivos.routes');
 
 router.use('/categorias', categoriasRoutes);
 router.use('/especies', especiesRoutes);
 router.use('/lugares', lugaresRoutes);
 router.use('/galeria', galeriaRoutes);
 router.use('/contenidos', contenidosRoutes);
+router.use('/archivos', archivosRoutes);
 
 module.exports = router;

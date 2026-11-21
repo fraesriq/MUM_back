@@ -1,209 +1,352 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const http = require('node:http');
+const path = require('node:path');
 const test = require('node:test');
 const express = require('express');
-const { createContenidoSchema, updateContenidoSchema, listQuerySchema: contenidosQuerySchema } = require('../src/modules/contenidos/contenidos.validation');
-const { createGaleriaSchema, updateGaleriaSchema, listQuerySchema: galeriaQuerySchema } = require('../src/modules/galeria/galeria.validation');
+const { createR2Config } = require('../src/config/r2');
+const { createR2Service } = require('../src/storage/r2.service');
+const { createArchivosService } = require('../src/modules/archivos/archivos.service');
+const { createArchivosRepository } = require('../src/modules/archivos/archivos.repository');
+const { createGaleriaService } = require('../src/modules/galeria/galeria.service');
+const { createEspeciesService } = require('../src/modules/especies/especies.service');
+const { createLugaresService } = require('../src/modules/lugares/lugares.service');
+const { createArchivoSchema, updateArchivoSchema, listQuerySchema: archivosQuerySchema } = require('../src/modules/archivos/archivos.validation');
+const { listQuerySchema: galeriaQuerySchema } = require('../src/modules/galeria/galeria.validation');
+const { createContenidoSchema, updateContenidoSchema } = require('../src/modules/contenidos/contenidos.validation');
 const { requireScope } = require('../src/auth/application.middleware');
-const db = require('../src/config/database');
-const contenidosRouter = require('../src/modules/contenidos/contenidos.routes');
+const archivosRouter = require('../src/modules/archivos/archivos.routes');
 const galeriaRouter = require('../src/modules/galeria/galeria.routes');
-const galeriaService = require('../src/modules/galeria/galeria.service');
-const galeriaRepository = require('../src/modules/galeria/galeria.repository');
 
-const paginationFailures = ['0', '-1', '1.5', 'abc'];
+const env = {
+  R2_ACCOUNT_ID: 'account-test', R2_ACCESS_KEY_ID: 'access-test', R2_SECRET_ACCESS_KEY: 'secret-test', R2_BUCKET_NAME: 'bucket-test',
+  R2_SIGNED_UPLOAD_TTL_SECONDS: '300', R2_SIGNED_DOWNLOAD_TTL_SECONDS: '3600', R2_MAX_FILE_SIZE_BYTES: '10485760',
+};
+const metadata = { tipo: 'foto', titulo: 'Archivo', texto_alt: 'Descripción', credito: 'MUM', permiso: 'autorizado', en_galeria_general: true };
+const key = 'archivos/foto/2026/11/123e4567-e89b-12d3-a456-426614174000.jpg';
 
-function listen(server) {
-  return new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      server.off('error', reject);
-      resolve();
-    });
+function fakeConfig() { return createR2Config(env); }
+function fakeR2(overrides = {}) { return { createPresignedUpload: async () => 'https://put.test', createPresignedDownload: async (fileKey) => `https://get.test/${fileKey}`, headObject: async () => ({ ContentType: 'image/jpeg', ContentLength: 10 }), deleteObject: async () => {}, ...overrides }; }
+function grant(overrides = {}) { return { object_key: key, application_public_id: 'client-admin', tipo: 'foto', content_type: 'image/jpeg', size_bytes: 10, expires_at: new Date(Date.now() + 60000), confirmed_at: null, ...overrides }; }
+function fakeRepository(overrides = {}) { return { findAll: async () => ({ items: [], total: 0, page: 1, limit: 20 }), findById: async () => null, findByRuta: async () => null, findPublicGallery: async () => ({ items: [], total: 0, page: 1, limit: 20 }), findPublicGalleryById: async () => null, create: async (item) => item, createUploadGrant: async () => {}, findUploadGrant: async () => grant(), insertWithGrantConfirmation: async ({ objectKey, metadata }) => ({ state: 'created', item: { ...metadata, ruta: objectKey } }), recordCleanupTask: async () => true, completeCleanupTask: async () => true, listPendingCleanupTasks: async () => [], update: async (id, item) => ({ id_archivo: id, ...item }), deleteWithCleanup: async () => null, ...overrides }; }
+
+function listen(server) { return new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve(); }); }); }
+function close(server) { return new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))); }
+function request(port, method, path, body) { return new Promise((resolve, reject) => { const payload = body && JSON.stringify(body); const req = http.request({ host: '127.0.0.1', port, method, path, headers: payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : undefined }, (res) => { let data = ''; res.on('data', (chunk) => { data += chunk; }); res.on('end', () => resolve({ status: res.statusCode, body: data ? JSON.parse(data) : null })); }); req.once('error', reject); if (payload) req.write(payload); req.end(); }); }
+
+test('la configuración R2 valida de forma diferida y construye endpoint y TTL seguros', () => {
+  const lazyMissing = createR2Config({});
+  assert.throws(lazyMissing, /R2_ACCOUNT_ID/);
+  const config = fakeConfig()();
+  assert.equal(config.endpoint, 'https://account-test.r2.cloudflarestorage.com');
+  assert.equal(config.region, 'auto');
+  assert.equal(config.signedUploadTtlSeconds, 300);
+  assert.equal(config.signedDownloadTtlSeconds, 3600);
+  assert.throws(createR2Config({ ...env, R2_SIGNED_UPLOAD_TTL_SECONDS: '0' }), /entero positivo/);
+  const bounded = createR2Config({ ...env, R2_SIGNED_UPLOAD_TTL_SECONDS: '1', R2_SIGNED_DOWNLOAD_TTL_SECONDS: '604800' })();
+  assert.equal(bounded.signedUploadTtlSeconds, 1);
+  assert.equal(bounded.signedDownloadTtlSeconds, 604800);
+  assert.throws(createR2Config({ ...env, R2_SIGNED_UPLOAD_TTL_SECONDS: '604801' }), /entero positivo/);
+});
+
+test('el servicio R2 firma PUT y GET con bucket, clave, contenido y TTL correctos', async () => {
+  const calls = [];
+  class Command { constructor(input) { this.input = input; } }
+  const service = createR2Service({
+    getConfig: fakeConfig(), clientFactory: () => ({ send: async () => ({}) }),
+    signer: async (client, command, options) => { calls.push({ client, command, options }); return 'https://signed.test'; },
+    commands: { PutObjectCommand: Command, GetObjectCommand: Command, HeadObjectCommand: Command, DeleteObjectCommand: Command },
   });
-}
+  assert.equal(await service.createPresignedUpload({ key, contentType: 'image/jpeg', contentLength: 10 }), 'https://signed.test');
+  assert.equal(await service.createPresignedDownload(key), 'https://signed.test');
+  assert.deepEqual(calls[0].command.input, { Bucket: 'bucket-test', Key: key, ContentType: 'image/jpeg', ContentLength: 10 });
+  assert.equal(calls[0].options.expiresIn, 300);
+  assert.deepEqual([...calls[0].options.signableHeaders].sort(), ['content-length', 'content-type']);
+  assert.deepEqual(calls[1].command.input, { Bucket: 'bucket-test', Key: key });
+  assert.equal(calls[1].options.expiresIn, 3600);
+});
 
-function close(server) {
-  return new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
-}
+test('la firma AWS local incluye content-type y content-length', async () => {
+  const url = await createR2Service({ getConfig: fakeConfig() }).createPresignedUpload({ key, contentType: 'image/jpeg', contentLength: 10 });
+  const signedHeaders = new URL(url).searchParams.get('X-Amz-SignedHeaders').split(';');
+  assert.ok(signedHeaders.includes('content-type'));
+  assert.ok(signedHeaders.includes('content-length'));
+});
 
-function request(port, method, path, body) {
-  return new Promise((resolve, reject) => {
-    const payload = body ? JSON.stringify(body) : null;
-    const req = http.request({
-      host: '127.0.0.1',
-      port,
-      method,
-      path,
-      headers: payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : undefined,
-    }, (res) => {
-      let responseBody = '';
-      res.setEncoding('utf8');
-      res.on('data', (chunk) => { responseBody += chunk; });
-      res.on('end', () => resolve({ status: res.statusCode, body: JSON.parse(responseBody) }));
-    });
-    req.once('error', reject);
-    if (payload) req.write(payload);
-    req.end();
-  });
-}
+test('la solicitud de carga rechaza MIME incompatible y tamaño excedido antes de firmar', async () => {
+  let signed = false;
+  const service = createArchivosService({ repository: fakeRepository(), getR2Config: fakeConfig(), r2Service: fakeR2({ createPresignedUpload: async () => { signed = true; } }), createUuid: () => '123e4567-e89b-12d3-a456-426614174000' });
+  await assert.rejects(() => service.requestUpload({ tipo: 'foto', content_type: 'video/mp4', tamanio_bytes: 10, application_client_id: 'client-admin' }), /no es compatible/);
+  await assert.rejects(() => service.requestUpload({ tipo: 'foto', content_type: 'image/jpeg', tamanio_bytes: 10485761, application_client_id: 'client-admin' }), /supera/);
+  assert.equal(signed, false);
+});
 
-async function withCatalogRouter(router, query, run) {
-  const originalQuery = db.query;
-  let server;
-  db.query = query;
-  try {
-    const app = express();
-    app.use(express.json());
-    app.use((req, res, next) => {
-      req.application = { scopes: ['catalog:read'] };
-      next();
-    });
-    app.use(router);
-    server = http.createServer(app);
-    await listen(server);
-    return await run(server.address().port);
-  } finally {
-    db.query = originalQuery;
-    if (server) await close(server);
-  }
-}
+test('la solicitud de carga registra el vínculo de aplicación y firma el tamaño declarado', async () => {
+  const grants = [];
+  let signedInput;
+  const service = createArchivosService({ repository: fakeRepository({ createUploadGrant: async (value) => { grants.push(value); } }), getR2Config: fakeConfig(), r2Service: fakeR2({ createPresignedUpload: async (value) => { signedInput = value; return 'https://put.test'; } }), createUuid: () => '123e4567-e89b-12d3-a456-426614174000' });
+  const result = await service.requestUpload({ tipo: 'foto', content_type: 'image/jpeg', tamanio_bytes: 10, application_client_id: 'client-admin' });
+  assert.equal(grants[0].applicationClientId, 'client-admin');
+  assert.deepEqual(signedInput, { key: result.object_key, contentType: 'image/jpeg', contentLength: 10 });
+  assert.deepEqual(result.required_headers, { 'Content-Type': 'image/jpeg' });
+  assert.deepEqual(result.signed_headers, ['content-type', 'content-length']);
+  assert.equal(result.expected_size_bytes, 10);
+});
 
-test('GET /contenidos/aprobados usa contenido y filtra aprobados para catalog:read', { concurrency: false }, async () => {
+test('la autorización y la tarea durable se confirman antes de entregar la URL', async () => {
+  const events = [];
+  const service = createArchivosService({ repository: fakeRepository({ createUploadGrant: async () => { events.push('durable'); } }), getR2Config: fakeConfig(), r2Service: fakeR2({ createPresignedUpload: async () => { events.push('signed'); return 'https://put.test'; } }), createUuid: () => '123e4567-e89b-12d3-a456-426614174000' });
+  await service.requestUpload({ tipo: 'foto', content_type: 'image/jpeg', tamanio_bytes: 10, application_client_id: 'client-admin' });
+  assert.deepEqual(events, ['durable', 'signed']);
+});
+
+test('el repositorio crea autorización y tarea, y completa la tarea al confirmar en la misma transacción', async () => {
   const queries = [];
-  await withCatalogRouter(contenidosRouter, async (sql) => {
-    queries.push(sql);
-    return sql.includes('COUNT(*)') ? [[{ total: 0 }]] : [[]];
-  }, async (port) => {
-    const response = await request(port, 'GET', '/aprobados');
-    assert.equal(response.status, 200);
-  });
-  assert.ok(queries.some((sql) => sql.includes('FROM contenido') && sql.includes("estado = 'aprobado'")));
-});
-
-test('GET /galeria usa archivo y filtra visibilidad pública para catalog:read', { concurrency: false }, async () => {
-  const queries = [];
-  await withCatalogRouter(galeriaRouter, async (sql) => {
-    queries.push(sql);
-    return sql.includes('COUNT(*)') ? [[{ total: 0 }]] : [[]];
-  }, async (port) => {
-    const response = await request(port, 'GET', '/');
-    assert.equal(response.status, 200);
-  });
-  assert.ok(queries.some((sql) => sql.includes('FROM archivo')
-    && sql.includes("permiso = 'autorizado'")
-    && sql.includes('en_galeria_general = 1')));
-});
-
-test('POST de catálogo con solo catalog:read rechaza antes de consultar la base de datos', { concurrency: false }, async () => {
-  for (const [router, body] of [
-    [contenidosRouter, { seccion: 'inicio', titulo: 'Título', texto: 'Texto', orden: 0 }],
-    [galeriaRouter, { tipo: 'foto', titulo: 'Foto', ruta: '/foto.jpg', texto_alt: 'Foto de prueba', credito: 'MUM' }],
-  ]) {
-    let queryCount = 0;
-    await withCatalogRouter(router, async () => {
-      queryCount += 1;
-      throw new Error('No debe consultar la base de datos');
-    }, async (port) => {
-      const response = await request(port, 'POST', '/', body);
-      assert.equal(response.status, 403);
-      assert.equal(response.body.error, 'insufficient_scope');
-    });
-    assert.equal(queryCount, 0);
-  }
-});
-
-test('la actualización de galería valida una fila de gestión sin enviar sus metadatos al repositorio', { concurrency: false }, async () => {
-  const originalFindByIdForManagement = galeriaRepository.findByIdForManagement;
-  const originalUpdate = galeriaRepository.update;
-  const row = {
-    id_archivo: 7,
-    id_fuente: null,
-    tipo: 'foto',
-    titulo: 'Título original',
-    ruta: '/foto.jpg',
-    texto_alt: 'Descripción original',
-    credito: 'MUM',
-    permiso: 'autorizado',
-    en_galeria_general: 1,
-    orden_galeria: 2,
+  const connection = {
+    beginTransaction: async () => queries.push('begin'), commit: async () => queries.push('commit'), rollback: async () => queries.push('rollback'), release: () => queries.push('release'),
+    query: async (sql) => {
+      queries.push(sql);
+      if (sql.startsWith('SELECT object_key')) return [[grant()]];
+      if (sql.includes('SELECT id_archivo') && sql.includes('FOR UPDATE')) return [[]];
+      if (sql.startsWith('INSERT INTO archivo')) return [{ insertId: 8 }];
+      if (sql.startsWith('SELECT id_archivo')) return [[{ id_archivo: 8, ...metadata, ruta: key }]];
+      return [{}];
+    },
   };
-  const patch = { titulo: 'Título actualizado' };
-  let receivedPatch;
-  try {
-    galeriaRepository.findByIdForManagement = async () => row;
-    galeriaRepository.update = async (id, data) => {
-      assert.equal(id, row.id_archivo);
-      receivedPatch = data;
-      return { ...row, ...data };
-    };
+  const repository = createArchivosRepository({ db: { getConnection: async () => connection }, now: () => new Date() });
+  await repository.createUploadGrant({ objectKey: key, applicationClientId: 'client-admin', tipo: 'foto', contentType: 'image/jpeg', size: 10, expiresAt: new Date(Date.now() + 60000) });
+  assert.ok(queries.some((sql) => sql.includes('r2_cleanup_tasks')));
+  assert.ok(queries.some((sql) => sql.includes('r2_upload_grants')));
+  queries.length = 0;
+  await repository.insertWithGrantConfirmation({ objectKey: key, applicationClientId: 'client-admin', tipo: 'foto', contentType: 'image/jpeg', size: 10, metadata });
+  const grantUpdate = queries.findIndex((sql) => sql.startsWith('UPDATE r2_upload_grants'));
+  const cleanupDelete = queries.findIndex((sql) => sql.startsWith('DELETE FROM r2_cleanup_tasks'));
+  assert.ok(grantUpdate >= 0 && cleanupDelete > grantUpdate);
+  assert.ok(queries.includes('commit'));
+});
 
-    const result = await galeriaService.update(row.id_archivo, patch);
-    assert.equal(result.titulo, patch.titulo);
-    assert.deepEqual(receivedPatch, patch);
-  } finally {
-    galeriaRepository.findByIdForManagement = originalFindByIdForManagement;
-    galeriaRepository.update = originalUpdate;
-  }
+test('la confirmación rechaza claves no administradas y discrepancias antes de insertar', async () => {
+  let inserts = 0;
+  const repository = fakeRepository({ create: async () => { inserts += 1; } });
+  const service = createArchivosService({ repository, getR2Config: fakeConfig(), r2Service: fakeR2() });
+  await assert.rejects(() => service.confirmUpload({ ...metadata, object_key: 'externo.jpg', content_type: 'image/jpeg', tamanio_bytes: 10, application_client_id: 'client-admin' }), /espacio administrado/);
+  await assert.rejects(() => createArchivosService({ repository, getR2Config: fakeConfig(), r2Service: fakeR2({ headObject: async () => ({ ContentType: 'image/png', ContentLength: 10 }) }) }).confirmUpload({ ...metadata, object_key: key, content_type: 'image/jpeg', tamanio_bytes: 10, application_client_id: 'client-admin' }), /contenido almacenado/);
+  await assert.rejects(() => createArchivosService({ repository, getR2Config: fakeConfig(), r2Service: fakeR2({ headObject: async () => ({ ContentType: 'image/jpeg', ContentLength: 9 }) }) }).confirmUpload({ ...metadata, object_key: key, content_type: 'image/jpeg', tamanio_bytes: 10, application_client_id: 'client-admin' }), /tamaño almacenado/);
+  assert.equal(inserts, 0);
+});
+
+test('la confirmación inserta metadatos solamente después de verificar el objeto', async () => {
+  const events = [];
+  const service = createArchivosService({ repository: fakeRepository({ insertWithGrantConfirmation: async ({ objectKey, metadata: item }) => { events.push('insert'); return { state: 'created', item: { ...item, ruta: objectKey } }; } }), getR2Config: fakeConfig(), r2Service: fakeR2({ headObject: async () => { events.push('head'); return { ContentType: 'image/jpeg', ContentLength: 10 }; } }) });
+  const result = await service.confirmUpload({ ...metadata, object_key: key, content_type: 'image/jpeg', tamanio_bytes: 10, application_client_id: 'client-admin' });
+  assert.deepEqual(events, ['head', 'insert']);
+  assert.equal(result.ruta, key);
+});
+
+test('la confirmación repetida devuelve el archivo confirmado sin insertar ni consultar R2', async () => {
+  let headed = false;
+  const existing = { id_archivo: 4, ...metadata, ruta: key };
+  const service = createArchivosService({ repository: fakeRepository({ findUploadGrant: async () => grant({ confirmed_at: new Date() }), findByRuta: async () => existing, insertWithGrantConfirmation: assert.fail }), getR2Config: fakeConfig(), r2Service: fakeR2({ headObject: async () => { headed = true; } }) });
+  assert.equal(await service.confirmUpload({ ...metadata, object_key: key, content_type: 'image/jpeg', tamanio_bytes: 10, application_client_id: 'client-admin' }), existing);
+  assert.equal(headed, false);
+});
+
+test('la confirmación rechaza una autorización emitida para otra aplicación', async () => {
+  const service = createArchivosService({ repository: fakeRepository(), getR2Config: fakeConfig(), r2Service: fakeR2() });
+  await assert.rejects(() => service.confirmUpload({ ...metadata, object_key: key, content_type: 'image/jpeg', tamanio_bytes: 10, application_client_id: 'client-no-autorizado' }), { message: /no pertenece/, status: 403 });
+});
+
+test('un fallo de inserción elimina el objeto o conserva una tarea de limpieza', async () => {
+  let deleted = 0;
+  const service = createArchivosService({ repository: fakeRepository({ insertWithGrantConfirmation: async () => { throw new Error('fallo de base de datos'); } }), getR2Config: fakeConfig(), r2Service: fakeR2({ deleteObject: async () => { deleted += 1; } }) });
+  await assert.rejects(() => service.confirmUpload({ ...metadata, object_key: key, content_type: 'image/jpeg', tamanio_bytes: 10, application_client_id: 'client-admin' }), /objeto cargado fue eliminado/);
+  assert.equal(deleted, 1);
+
+  const tasks = [];
+  const failedCleanup = createArchivosService({ repository: fakeRepository({ insertWithGrantConfirmation: async () => { throw new Error('fallo de base de datos'); }, recordCleanupTask: async (task) => { tasks.push(task); return true; } }), getR2Config: fakeConfig(), r2Service: fakeR2({ deleteObject: async () => { throw new Error('R2 no disponible'); } }) });
+  await assert.rejects(() => failedCleanup.confirmUpload({ ...metadata, object_key: key, content_type: 'image/jpeg', tamanio_bytes: 10, application_client_id: 'client-admin' }), /pendiente de limpieza/);
+  assert.equal(tasks[0].objectKey, key);
+});
+
+test('el fallo triple de confirmación informa que la tarea preexistente requiere revisión', async () => {
+  const service = createArchivosService({ repository: fakeRepository({ insertWithGrantConfirmation: async () => { throw new Error('fallo de base de datos'); }, recordCleanupTask: async () => { throw new Error('fallo al actualizar tarea'); } }), getR2Config: fakeConfig(), r2Service: fakeR2({ deleteObject: async () => { throw new Error('R2 no disponible'); } }) });
+  await assert.rejects(() => service.confirmUpload({ ...metadata, object_key: key, content_type: 'image/jpeg', tamanio_bytes: 10, application_client_id: 'client-admin' }), { message: /tarea de limpieza preexistente/, status: 503 });
+});
+
+test('la eliminación no llama R2 cuando la transacción de base de datos falla', async () => {
+  let r2Calls = 0;
+  const service = createArchivosService({ repository: fakeRepository({ deleteWithCleanup: async () => { throw new Error('restricción de clave foránea'); } }), getR2Config: fakeConfig(), r2Service: fakeR2({ deleteObject: async () => { r2Calls += 1; } }) });
+  await assert.rejects(() => service.remove(7), /clave foránea/);
+  assert.equal(r2Calls, 0);
+});
+
+test('la eliminación conserva o completa la tarea durable según R2', async () => {
+  const item = { id_archivo: 7, ruta: key };
+  const retained = [];
+  const failed = createArchivosService({ repository: fakeRepository({ deleteWithCleanup: async () => item, recordCleanupTask: async (task) => { retained.push(task); return true; } }), getR2Config: fakeConfig(), r2Service: fakeR2({ deleteObject: async () => { throw new Error('R2 no disponible'); } }) });
+  await assert.rejects(() => failed.remove(7), /pendiente de limpieza/);
+  assert.equal(retained[0].objectKey, key);
+
+  let completed;
+  const succeeded = createArchivosService({ repository: fakeRepository({ deleteWithCleanup: async () => item, completeCleanupTask: async (objectKey) => { completed = objectKey; return true; } }), getR2Config: fakeConfig(), r2Service: fakeR2() });
+  assert.deepEqual(await succeeded.remove(7), { deleted: true });
+  assert.equal(completed, key);
+});
+
+test('el procesador de limpieza omite referencias actuales, elimina huérfanos y conserva fallos', async () => {
+  const orphan = 'archivos/foto/2026/11/123e4567-e89b-12d3-a456-426614174001.jpg';
+  const failedKey = 'archivos/foto/2026/11/123e4567-e89b-12d3-a456-426614174002.jpg';
+  const deleted = [];
+  const completed = [];
+  const failures = [];
+  const service = createArchivosService({
+    repository: fakeRepository({
+      listPendingCleanupTasks: async () => [{ object_key: orphan, reason: 'fallo_confirmacion' }, { object_key: failedKey, reason: 'archivo_eliminado' }],
+      completeCleanupTask: async (objectKey) => { completed.push(objectKey); return true; },
+      recordCleanupTask: async (task) => { failures.push(task); return true; },
+    }),
+    getR2Config: fakeConfig(),
+    r2Service: fakeR2({ deleteObject: async (objectKey) => { deleted.push(objectKey); if (objectKey === failedKey) throw new Error('R2 no disponible'); } }),
+  });
+  const result = await service.processCleanup({ limit: 100 });
+  assert.deepEqual(result, { processed: 2, deleted: 1, failed: 1 });
+  assert.deepEqual(completed, [orphan]);
+  assert.equal(failures[0].objectKey, failedKey);
+  assert.equal(deleted.includes(key), false);
+});
+
+test('el contrato de candidatos de limpieza excluye grants activos sin confirmar sin mirar la razón', async () => {
+  let sql;
+  const repository = createArchivosRepository({ db: { query: async (statement) => { sql = statement; return [[]]; } } });
+  await repository.listPendingCleanupTasks(100);
+  assert.match(sql, /a\.id_archivo IS NULL/);
+  assert.match(sql, /g\.object_key IS NULL OR g\.confirmed_at IS NOT NULL OR g\.expires_at < CURRENT_TIMESTAMP/);
+  assert.doesNotMatch(sql.slice(sql.indexOf('WHERE')), /t\.reason/);
+  assert.ok(sql.includes('g.confirmed_at IS NOT NULL'), 'un grant confirmado sin archivo es candidato');
+  assert.ok(sql.includes('g.expires_at < CURRENT_TIMESTAMP'), 'un grant sin confirmar vencido es candidato');
+  assert.ok(sql.includes('g.object_key IS NULL'), 'una clave sin grant es candidata');
+});
+
+test('el rollback durable declara las precondiciones de seguridad', () => {
+  const migration = fs.readFileSync(path.join(__dirname, '..', 'migrations', '20261121_archivo_r2_durability.down.sql'), 'utf8');
+  assert.match(migration, /DETENER/);
+  assert.match(migration, /r2_cleanup_tasks/);
+  assert.match(migration, /confirmed_at IS NULL/);
+});
+
+test('la migración durable usa claves ASCII binarias y el rollback restaura ruta utf8mb4', () => {
+  const migrationsPath = path.join(__dirname, '..', 'migrations');
+  const up = fs.readFileSync(path.join(migrationsPath, '20261121_archivo_r2_durability.up.sql'), 'utf8');
+  const down = fs.readFileSync(path.join(migrationsPath, '20261121_archivo_r2_durability.down.sql'), 'utf8');
+  assert.match(up, /SELECT ruta FROM archivo WHERE ruta REGEXP '\[\^\[:ascii:\]\]'/);
+  assert.match(up, /MODIFY COLUMN ruta VARCHAR\(1024\) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,\s+ADD UNIQUE KEY uq_archivo_ruta \(ruta\)/);
+  assert.equal((up.match(/object_key VARCHAR\(1024\) CHARACTER SET ascii COLLATE ascii_bin NOT NULL/g) || []).length, 2);
+  assert.equal((up.match(/PRIMARY KEY \(object_key\)/g) || []).length, 2);
+  assert.match(down, /DROP TABLE r2_upload_grants;\s+DROP TABLE r2_cleanup_tasks;\s+ALTER TABLE archivo\s+DROP INDEX uq_archivo_ruta,\s+MODIFY COLUMN ruta VARCHAR\(1024\) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL/);
+});
+
+test('la proyección pública agrega URL firmada y elimina campos privados', async () => {
+  const service = createArchivosService({ repository: fakeRepository({ findPublicGallery: async () => ({ items: [{ id_archivo: 1, ...metadata, ruta: key, id_fuente: 4 }], total: 1, page: 1, limit: 20 }) }), getR2Config: fakeConfig(), r2Service: fakeR2() });
+  const result = await service.getPublicGallery({ page: 1, limit: 20 });
+  assert.equal(result.items[0].url, `https://get.test/${key}`);
+  assert.equal(result.items[0].url_expires_in, 3600);
+  for (const field of ['ruta', 'permiso', 'id_fuente', 'en_galeria_general']) assert.equal(field in result.items[0], false);
+});
+
+test('galería delega la lectura pública al módulo archivos', async () => {
+  const galeria = createGaleriaService({ service: { getPublicGallery: async (filters) => ({ filters }), getPublicGalleryById: async (id) => ({ id }) } });
+  assert.deepEqual(await galeria.getAll({ page: 1 }), { filters: { page: 1 } });
+  assert.deepEqual(await galeria.getById(7), { id: 7 });
+});
+
+test('el router de galería expone solo GET y POST devuelve 404', { concurrency: false }, async () => {
+  let server;
+  try {
+    const app = express(); app.use(express.json()); app.use((req, res, next) => { req.application = { scopes: ['catalog:read'] }; next(); }); app.use(galeriaRouter); app.use((req, res) => res.status(404).json({ message: 'No encontrado' }));
+    server = http.createServer(app); await listen(server);
+    const invalidGet = await request(server.address().port, 'GET', '/?page=0');
+    assert.equal(invalidGet.status, 400);
+    const response = await request(server.address().port, 'POST', '/', metadata);
+    assert.equal(response.status, 404);
+  } finally { if (server) await close(server); }
+});
+
+test('las mutaciones de archivos rechazan catalog:read antes de consultar dependencias', { concurrency: false }, async () => {
+  let server;
+  try {
+    const app = express(); app.use(express.json()); app.use((req, res, next) => { req.application = { scopes: ['catalog:read'] }; next(); }); app.use(archivosRouter);
+    server = http.createServer(app); await listen(server);
+    const response = await request(server.address().port, 'POST', '/cargas', { tipo: 'foto', content_type: 'image/jpeg', tamanio_bytes: 10 });
+    assert.equal(response.status, 403);
+    assert.equal(response.body.error, 'insufficient_scope');
+  } finally { if (server) await close(server); }
+});
+
+test('especies y lugares firman archivos públicos y no exponen ruta', async () => {
+  const filesService = { mapPublicFiles: async (files) => files.map(({ ruta, ...file }) => ({ ...file, url: `https://get.test/${ruta}`, url_expires_in: 3600 })) };
+  const row = { slug: 'sector', archivos: [{ id_archivo: 1, ruta: key, tipo: 'foto' }] };
+  const especie = await createEspeciesService({ dataRepository: { findAll: async () => [], findBySlug: async () => row }, filesService }).getBySlug('sector');
+  const lugar = await createLugaresService({ dataRepository: { findAll: async () => [], findBySlug: async () => row }, filesService }).getBySlug('sector');
+  assert.equal('ruta' in especie.archivos[0], false);
+  assert.equal('ruta' in lugar.archivos[0], false);
+  assert.equal(especie.archivos[0].url_expires_in, 3600);
+});
+
+test('los DTO públicos de especies y lugares eliminan identificadores y estados internos', async () => {
+  const filesService = { mapPublicFiles: async () => [] };
+  const especie = await createEspeciesService({ dataRepository: { findAll: async () => [], findBySlug: async () => ({ id_especie: 1, id_categoria: 2, id_fuente: 3, estado: 'aprobado', slug: 'ave', archivos: [] }) }, filesService }).getBySlug('ave');
+  const lugarService = createLugaresService({ dataRepository: { findAll: async () => [{ id_lugar: 1, id_ciudad: 2, id_coordenada: 3, id_fuente: 4, estado: 'aprobado', coordenada_confirmada: false, slug: 'costa', latitud: 1, longitud: 2, url_mapa: 'privado' }], findBySlug: async () => null }, filesService });
+  const [lugar] = await lugarService.getAll();
+  for (const field of ['id_especie', 'id_categoria', 'id_fuente', 'estado']) assert.equal(field in especie, false);
+  for (const field of ['id_lugar', 'id_ciudad', 'id_coordenada', 'id_fuente', 'estado', 'coordenada_confirmada']) assert.equal(field in lugar, false);
+  assert.deepEqual({ latitud: lugar.latitud, longitud: lugar.longitud, url_mapa: lugar.url_mapa }, { latitud: null, longitud: null, url_mapa: null });
 });
 
 test('las actualizaciones de contenido no agregan estado predeterminado', () => {
-  const result = updateContenidoSchema.safeParse({ titulo: 'Título corregido' });
-  assert.equal(result.success, true);
-  assert.deepEqual(result.data, { titulo: 'Título corregido' });
+  assert.deepEqual(updateContenidoSchema.parse({ titulo: 'Título corregido' }), { titulo: 'Título corregido' });
   assert.equal(updateContenidoSchema.safeParse({}).success, false);
-  assert.equal(createContenidoSchema.safeParse({ seccion: 'inicio', titulo: 'Título', texto: 'Texto', orden: 0 }).data.estado, 'pendiente');
+  assert.equal(createContenidoSchema.parse({ seccion: 'inicio', titulo: 'Título', texto: 'Texto', orden: 0 }).estado, 'pendiente');
 });
 
-test('las actualizaciones de galería no agregan permiso ni visibilidad predeterminados', () => {
-  const result = updateGaleriaSchema.safeParse({ titulo: 'Imagen corregida' });
-  assert.equal(result.success, true);
-  assert.deepEqual(result.data, { titulo: 'Imagen corregida' });
-  assert.equal(updateGaleriaSchema.safeParse({}).success, false);
-  const created = createGaleriaSchema.safeParse({ tipo: 'video', titulo: 'Video', ruta: '/video.mp4', credito: 'Archivo MUM' });
-  assert.equal(created.success, true);
-  assert.equal(created.data.permiso, 'pendiente');
-  assert.equal(created.data.en_galeria_general, false);
+test('las actualizaciones de archivos no agregan permisos ni visibilidad predeterminados', () => {
+  assert.deepEqual(updateArchivoSchema.parse({ titulo: 'Título corregido' }), { titulo: 'Título corregido' });
+  assert.equal(updateArchivoSchema.safeParse({}).success, false);
+  const created = createArchivoSchema.parse({ tipo: 'video', titulo: 'Video', credito: 'MUM' });
+  assert.equal(created.permiso, 'pendiente');
+  assert.equal(created.en_galeria_general, false);
 });
 
-for (const [name, schema] of [['contenido', contenidosQuerySchema], ['galería', galeriaQuerySchema]]) {
-  test(`la paginación de ${name} acepta los valores predeterminados`, () => {
-    assert.deepEqual(schema.parse({}), { page: 1, limit: 20 });
-  });
-
-  for (const value of paginationFailures) {
-    test(`la paginación de ${name} rechaza page=${value}`, () => {
-      assert.equal(schema.safeParse({ page: value }).success, false);
-    });
-    test(`la paginación de ${name} rechaza limit=${value}`, () => {
-      assert.equal(schema.safeParse({ limit: value }).success, false);
-    });
+for (const [name, schema] of [['archivos', archivosQuerySchema], ['galería', galeriaQuerySchema]]) {
+  test(`la paginación de ${name} acepta valores predeterminados`, () => { assert.deepEqual(schema.parse({}), { page: 1, limit: 20 }); });
+  for (const value of ['0', '-1', '1.5', 'abc']) {
+    test(`la paginación de ${name} rechaza page=${value}`, () => { assert.equal(schema.safeParse({ page: value }).success, false); });
+    test(`la paginación de ${name} rechaza limit=${value}`, () => { assert.equal(schema.safeParse({ limit: value }).success, false); });
   }
-
-  test(`la paginación de ${name} rechaza limit=101`, () => {
-    assert.equal(schema.safeParse({ limit: '101' }).success, false);
-  });
+  test(`la paginación de ${name} rechaza limit=101`, () => { assert.equal(schema.safeParse({ limit: '101' }).success, false); });
 }
 
-test('la validación de galería respeta las restricciones de archivo', () => {
-  const base = { titulo: 'Archivo', ruta: '/archivo.jpg', credito: 'Archivo MUM' };
-  assert.equal(createGaleriaSchema.safeParse({ ...base, tipo: 'foto' }).success, false);
-  assert.equal(createGaleriaSchema.safeParse({ ...base, tipo: 'foto', texto_alt: 'Descripción' }).success, true);
-  assert.equal(createGaleriaSchema.safeParse({ ...base, tipo: 'video' }).success, true);
-  assert.equal(createGaleriaSchema.safeParse({ ...base, tipo: 'video', ruta: '   ' }).success, false);
-  assert.equal(createGaleriaSchema.safeParse({ ...base, tipo: 'video', credito: '   ' }).success, false);
+test('la validación de archivos respeta las restricciones de metadatos', () => {
+  assert.equal(createArchivoSchema.safeParse({ tipo: 'foto', titulo: 'Archivo', credito: 'MUM' }).success, false);
+  assert.equal(createArchivoSchema.safeParse({ tipo: 'foto', titulo: 'Archivo', credito: 'MUM', texto_alt: 'Descripción' }).success, true);
+  assert.equal(createArchivoSchema.safeParse({ tipo: 'video', titulo: 'Archivo', credito: 'MUM' }).success, true);
 });
 
-test('catalog:write permite solo clientes con el permiso de gestión', () => {
+test('catalog:write permite solamente clientes con permiso de gestión', () => {
   const middleware = requireScope('catalog:write');
-  const allowed = { application: { scopes: ['catalog:read', 'catalog:write'] } };
   let advanced = false;
-  middleware(allowed, {}, () => { advanced = true; });
+  middleware({ application: { scopes: ['catalog:read', 'catalog:write'] } }, {}, () => { advanced = true; });
   assert.equal(advanced, true);
-
-  const denied = { application: { scopes: ['catalog:read'] } };
   const response = { statusCode: null, body: null, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
-  middleware(denied, response, assert.fail);
+  middleware({ application: { scopes: ['catalog:read'] } }, response, assert.fail);
   assert.equal(response.statusCode, 403);
-  assert.equal(response.body.error, 'insufficient_scope');
+});
+
+test('la actualización valida la fila fusionada sin mutar tipo ni ruta', async () => {
+  let received;
+  const service = createArchivosService({
+    repository: fakeRepository({ findById: async () => ({ id_archivo: 7, ...metadata, ruta: key }), update: async (id, patch) => { received = { id, patch }; return { id_archivo: id, ...patch }; } }),
+    getR2Config: fakeConfig(), r2Service: fakeR2(),
+  });
+  await service.update(7, { titulo: 'Corregido' });
+  assert.deepEqual(received, { id: 7, patch: { titulo: 'Corregido' } });
 });

@@ -3,9 +3,8 @@ const db = require('../../config/database');
 // Listado con filtro opcional por categoría (slug) — RF03
 exports.findAll = async ({ categoria } = {}) => {
   let sql = `
-    SELECT e.id_especie, e.slug, e.nombre_comun, e.nombre_cientifico,
-           e.descripcion, e.estado,
-           c.id_categoria, c.nombre AS categoria, c.slug AS categoria_slug
+    SELECT e.slug, e.nombre_comun, e.nombre_cientifico, e.descripcion,
+           c.nombre AS categoria, c.slug AS categoria_slug
     FROM especie e
     JOIN categoria c ON c.id_categoria = e.id_categoria
     WHERE e.estado = 'aprobado'
@@ -26,7 +25,9 @@ exports.findAll = async ({ categoria } = {}) => {
 // Ficha por slug con portada y carrusel multimedia — RF02, RF05
 exports.findBySlug = async (slug) => {
   const [especies] = await db.query(
-    `SELECT e.*, c.nombre AS categoria, c.slug AS categoria_slug,
+    `SELECT e.slug, e.nombre_comun, e.nombre_cientifico, e.descripcion,
+             e.distribucion_geografica, e.habitat_ecosistema, e.alimentacion,
+             e.habito, e.reproduccion, c.nombre AS categoria, c.slug AS categoria_slug,
             f.titulo AS fuente_titulo, f.autor_institucion AS fuente_autor
      FROM especie e
      JOIN categoria c ON c.id_categoria = e.id_categoria
@@ -44,9 +45,9 @@ exports.findBySlug = async (slug) => {
             ea.es_portada_ficha, ea.orden_carrusel
      FROM especie_archivo ea
      JOIN archivo a ON a.id_archivo = ea.id_archivo
-     WHERE ea.id_especie = ? AND a.permiso = 'autorizado'
+      WHERE ea.id_especie = (SELECT id_especie FROM especie WHERE slug = ?) AND a.permiso = 'autorizado'
      ORDER BY ea.es_portada_ficha DESC, ea.orden_carrusel ASC`,
-    [especie.id_especie]
+    [slug]
   );
 
   return { ...especie, archivos };

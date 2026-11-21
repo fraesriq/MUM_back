@@ -3,9 +3,9 @@ const db = require('../../config/database');
 // Listado de los 8 sectores con su comuna, región y coordenada — RF04, RN03
 exports.findAll = async () => {
   const [rows] = await db.query(
-    `SELECT l.id_lugar, l.slug, l.nombre, l.descripcion, l.orden, l.estado,
-            ci.nombre AS ciudad, r.nombre AS region,
-            co.id_coordenada, co.latitud, co.longitud, co.url_mapa,
+    `SELECT l.slug, l.nombre, l.descripcion, l.orden,
+             ci.nombre AS ciudad, r.nombre AS region,
+             co.latitud, co.longitud, co.url_mapa,
             co.confirmada AS coordenada_confirmada
      FROM lugar l
      JOIN ciudad ci ON ci.id_ciudad = l.id_ciudad
@@ -20,7 +20,7 @@ exports.findAll = async () => {
 // Detalle de un sector con coordenada confirmada y galería — RF04, RN03, RF05
 exports.findBySlug = async (slug) => {
   const [lugares] = await db.query(
-    `SELECT l.*, ci.nombre AS ciudad, r.nombre AS region,
+    `SELECT l.slug, l.nombre, l.descripcion, l.orden, ci.nombre AS ciudad, r.nombre AS region,
             co.latitud, co.longitud, co.url_mapa, co.confirmada AS coordenada_confirmada,
             f.titulo AS fuente_titulo, f.autor_institucion AS fuente_autor
      FROM lugar l
@@ -48,9 +48,9 @@ exports.findBySlug = async (slug) => {
             la.es_portada_lugar, la.orden_carrusel
      FROM lugar_archivo la
      JOIN archivo a ON a.id_archivo = la.id_archivo
-     WHERE la.id_lugar = ? AND a.permiso = 'autorizado'
+      WHERE la.id_lugar = (SELECT id_lugar FROM lugar WHERE slug = ?) AND a.permiso = 'autorizado'
      ORDER BY la.es_portada_lugar DESC, la.orden_carrusel ASC`,
-    [lugar.id_lugar]
+    [slug]
   );
 
   return { ...lugar, archivos };
