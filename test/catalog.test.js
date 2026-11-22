@@ -17,6 +17,7 @@ const { createContenidoSchema, updateContenidoSchema } = require('../src/modules
 const { requireScope } = require('../src/auth/application.middleware');
 const archivosRouter = require('../src/modules/archivos/archivos.routes');
 const galeriaRouter = require('../src/modules/galeria/galeria.routes');
+const routes = require('../src/routes');
 
 const env = {
   R2_ACCOUNT_ID: 'account-test', R2_ACCESS_KEY_ID: 'access-test', R2_SECRET_ACCESS_KEY: 'secret-test', R2_BUCKET_NAME: 'bucket-test',
@@ -32,7 +33,7 @@ function fakeRepository(overrides = {}) { return { findAll: async () => ({ items
 
 function listen(server) { return new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve(); }); }); }
 function close(server) { return new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve()))); }
-function request(port, method, path, body) { return new Promise((resolve, reject) => { const payload = body && JSON.stringify(body); const req = http.request({ host: '127.0.0.1', port, method, path, headers: payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : undefined }, (res) => { let data = ''; res.on('data', (chunk) => { data += chunk; }); res.on('end', () => resolve({ status: res.statusCode, body: data ? JSON.parse(data) : null })); }); req.once('error', reject); if (payload) req.write(payload); req.end(); }); }
+function request(port, method, path, body, headers = {}) { return new Promise((resolve, reject) => { const payload = body && JSON.stringify(body); const req = http.request({ host: '127.0.0.1', port, method, path, headers: { ...headers, ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}) } }, (res) => { let data = ''; res.on('data', (chunk) => { data += chunk; }); res.on('end', () => resolve({ status: res.statusCode, body: data ? JSON.parse(data) : null })); }); req.once('error', reject); if (payload) req.write(payload); req.end(); }); }
 
 test('la configuración R2 valida de forma diferida y construye endpoint y TTL seguros', () => {
   const lazyMissing = createR2Config({});
@@ -282,6 +283,24 @@ test('las mutaciones de archivos rechazan catalog:read antes de consultar depend
   } finally { if (server) await close(server); }
 });
 
+test('la pila de rutas permite catalog:write en archivos, pero conserva su guardia de escritura', { concurrency: false }, async () => {
+  let server;
+  try {
+    const app = express();
+    app.use('/api/v1', (req, res, next) => { req.application = { scopes: req.get('x-test-scope').split(' ') }; next(); }, requireScope('catalog:read'), routes);
+    app.use((error, req, res, next) => res.status(error.status || 500).json({ message: error.message }));
+    server = http.createServer(app); await listen(server);
+    const port = server.address().port;
+    const writeOnly = await request(port, 'GET', '/api/v1/archivos?page=0', undefined, { 'x-test-scope': 'catalog:write' });
+    const readOnly = await request(port, 'GET', '/api/v1/archivos?page=0', undefined, { 'x-test-scope': 'catalog:read' });
+    const catalogRead = await request(port, 'GET', '/api/v1/galeria?page=0', undefined, { 'x-test-scope': 'catalog:read' });
+    assert.equal(writeOnly.status, 400);
+    assert.equal(readOnly.status, 403);
+    assert.equal(readOnly.body.error, 'insufficient_scope');
+    assert.equal(catalogRead.status, 400);
+  } finally { if (server) await close(server); }
+});
+
 test('especies y lugares firman archivos públicos y no exponen ruta', async () => {
   const filesService = { mapPublicFiles: async (files) => files.map(({ ruta, ...file }) => ({ ...file, url: `https://get.test/${ruta}`, url_expires_in: 3600 })) };
   const row = { slug: 'sector', archivos: [{ id_archivo: 1, ruta: key, tipo: 'foto' }] };
@@ -331,13 +350,27 @@ test('la validación de archivos respeta las restricciones de metadatos', () => 
   assert.equal(createArchivoSchema.safeParse({ tipo: 'video', titulo: 'Archivo', credito: 'MUM' }).success, true);
 });
 
-test('catalog:write permite solamente clientes con permiso de gestión', () => {
-  const middleware = requireScope('catalog:write');
-  let advanced = false;
-  middleware({ application: { scopes: ['catalog:read', 'catalog:write'] } }, {}, () => { advanced = true; });
-  assert.equal(advanced, true);
+test('catalog:write hereda catalog:read sin otorgar escritura al permiso de lectura', () => {
+  const readMiddleware = requireScope('catalog:read');
+  const writeMiddleware = requireScope('catalog:write');
+  let readAdvanced = false;
+  readMiddleware({ application: { scopes: ['catalog:write'] } }, {}, () => { readAdvanced = true; });
+  assert.equal(readAdvanced, true);
+  let writeAdvanced = false;
+  writeMiddleware({ application: { scopes: ['catalog:read', 'catalog:write'] } }, {}, () => { writeAdvanced = true; });
+  assert.equal(writeAdvanced, true);
   const response = { statusCode: null, body: null, status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
-  middleware({ application: { scopes: ['catalog:read'] } }, response, assert.fail);
+  writeMiddleware({ application: { scopes: ['catalog:read'] } }, response, assert.fail);
+  assert.equal(response.statusCode, 403);
+  readMiddleware({ application: { scopes: ['other:write'] } }, response, assert.fail);
+  assert.equal(response.statusCode, 403);
+  readMiddleware({}, response, assert.fail);
+  assert.equal(response.statusCode, 403);
+  for (const scopes of [null, 'catalog:write', { 0: 'catalog:write' }, ['catalog:write', null]]) {
+    assert.doesNotThrow(() => readMiddleware({ application: { scopes } }, response, assert.fail));
+    assert.equal(response.statusCode, 403);
+  }
+  assert.doesNotThrow(() => requireScope('toString')({ application: { scopes: ['catalog:write'] } }, response, assert.fail));
   assert.equal(response.statusCode, 403);
 });
 

@@ -6,6 +6,10 @@ const applicationErrorMessages = {
   insufficient_scope: 'El token de la aplicación no tiene los permisos necesarios.',
 };
 
+const inheritedScopes = new Map([
+  ['catalog:read', new Set(['catalog:write'])],
+]);
+
 function createApplicationTokenMiddleware({ authConfig, clientRepository, jwtService }) {
   const tokenService = jwtService || createJwtService(authConfig);
   return async (req, res, next) => {
@@ -27,7 +31,7 @@ function createApplicationTokenMiddleware({ authConfig, clientRepository, jwtSer
 }
 
 function requireScope(scope) {
-  return (req, res, next) => (req.application && req.application.scopes.includes(scope)
+  return (req, res, next) => (Array.isArray(req.application?.scopes) && req.application.scopes.every((assignedScope) => typeof assignedScope === 'string') && req.application.scopes.some((assignedScope) => assignedScope === scope || inheritedScopes.get(scope)?.has(assignedScope))
     ? next()
     : res.status(403).json({ error: 'insufficient_scope', message: applicationErrorMessages.insufficient_scope }));
 }

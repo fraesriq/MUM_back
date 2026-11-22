@@ -57,7 +57,7 @@ Las rutas del catálogo se consumen con el encabezado dedicado, no con `Authoriz
 X-Application-Token: <JWT>
 ```
 
-`Authorization` queda disponible para la futura identidad de usuarios finales. Todas las rutas `/api/v1` requieren un cliente válido y activo, además de una asignación vigente de permisos. Las rutas GET actuales del catálogo requieren `catalog:read`. `/oauth/token`, `/health` y `/health/live` no requieren un token de aplicación. `/health/live` comprueba únicamente que el proceso esté activo; `/health` informa la disponibilidad de la base de datos sin revelar detalles de sus errores.
+`Authorization` queda disponible para la futura identidad de usuarios finales. Todas las rutas `/api/v1` requieren un cliente válido y activo, además de una asignación vigente de permisos. Las rutas GET ordinarias del catálogo requieren `catalog:read`, mientras que los endpoints GET de gestión de `/api/v1/archivos` requieren `catalog:write`; `catalog:write` incluye explícitamente la capacidad de lectura del catálogo, pero `catalog:read` no concede escritura. `/oauth/token`, `/health` y `/health/live` no requieren un token de aplicación. `/health/live` comprueba únicamente que el proceso esté activo; `/health` informa la disponibilidad de la base de datos sin revelar detalles de sus errores.
 
 ## Verificación local
 
