@@ -17,6 +17,7 @@ const { createContenidoSchema, updateContenidoSchema } = require('../src/modules
 const { requireScope } = require('../src/auth/application.middleware');
 const archivosRouter = require('../src/modules/archivos/archivos.routes');
 const galeriaRouter = require('../src/modules/galeria/galeria.routes');
+const contenidosRouter = require('../src/modules/contenidos/contenidos.routes');
 const routes = require('../src/routes');
 
 const env = {
@@ -270,6 +271,119 @@ test('el router de galería expone solo GET y POST devuelve 404', { concurrency:
     const response = await request(server.address().port, 'POST', '/', metadata);
     assert.equal(response.status, 404);
   } finally { if (server) await close(server); }
+});
+
+test('la consulta validada de galería entrega paginación numérica al repositorio', { concurrency: false }, async () => {
+  let server;
+  const repository = require('../src/modules/archivos/archivos.repository');
+  const original = repository.findPublicGallery;
+  let received;
+  repository.findPublicGallery = async (filters) => {
+    received = filters;
+    return { items: [], total: 0, ...filters };
+  };
+  try {
+    const app = express();
+    app.use(galeriaRouter);
+    server = http.createServer(app); await listen(server);
+    const response = await request(server.address().port, 'GET', '/?page=1&limit=20');
+    assert.equal(response.status, 200);
+    assert.deepEqual(received, { page: 1, limit: 20 });
+    assert.equal(typeof received.page, 'number');
+    assert.equal(typeof received.limit, 'number');
+  } finally {
+    repository.findPublicGallery = original;
+    if (server) await close(server);
+  }
+});
+
+test('las consultas validadas usan valores numéricos predeterminados y rechazan paginación inválida', { concurrency: false }, async () => {
+  let server;
+  const repository = require('../src/modules/archivos/archivos.repository');
+  const original = repository.findPublicGallery;
+  let received;
+  repository.findPublicGallery = async (filters) => {
+    received = filters;
+    return { items: [], total: 0, ...filters };
+  };
+  try {
+    const app = express();
+    app.use(galeriaRouter);
+    server = http.createServer(app); await listen(server);
+    const port = server.address().port;
+    const defaults = await request(port, 'GET', '/');
+    assert.equal(defaults.status, 200);
+    assert.deepEqual(received, { page: 1, limit: 20 });
+    assert.equal(typeof received.page, 'number');
+    assert.equal(typeof received.limit, 'number');
+    const invalid = await request(port, 'GET', '/?page=0');
+    assert.equal(invalid.status, 400);
+  } finally {
+    repository.findPublicGallery = original;
+    if (server) await close(server);
+  }
+});
+
+test('todos los controladores con validación de consulta consumen la consulta validada', { concurrency: false }, async () => {
+  let server;
+  const archivosService = require('../src/modules/archivos/archivos.service');
+  const contenidosService = require('../src/modules/contenidos/contenidos.service');
+  const galeriaService = require('../src/modules/galeria/galeria.service');
+  const originals = {
+    archivos: archivosService.getAll,
+    aprobados: contenidosService.getAprobados,
+    contenidos: contenidosService.getAll,
+    galeria: galeriaService.getAll,
+  };
+  const received = {};
+  archivosService.getAll = async (filters) => { received.archivos = filters; return filters; };
+  contenidosService.getAprobados = async (filters) => { received.aprobados = filters; return filters; };
+  contenidosService.getAll = async (filters) => { received.contenidos = filters; return filters; };
+  galeriaService.getAll = async (filters) => { received.galeria = filters; return filters; };
+  try {
+    const app = express();
+    app.use((req, res, next) => { req.application = { scopes: ['catalog:write'] }; next(); });
+    app.use('/archivos', archivosRouter);
+    app.use('/contenidos', contenidosRouter);
+    app.use('/galeria', galeriaRouter);
+    server = http.createServer(app); await listen(server);
+    const port = server.address().port;
+    for (const path of ['/archivos?page=1&limit=20', '/contenidos/aprobados?page=1&limit=20', '/contenidos?page=1&limit=20', '/galeria?page=1&limit=20']) {
+      assert.equal((await request(port, 'GET', path)).status, 200);
+    }
+    assert.deepEqual(Object.keys(received).sort(), ['aprobados', 'archivos', 'contenidos', 'galeria']);
+    for (const filters of Object.values(received)) {
+      assert.deepEqual(filters, { page: 1, limit: 20 });
+      assert.equal(typeof filters.page, 'number');
+      assert.equal(typeof filters.limit, 'number');
+    }
+  } finally {
+    archivosService.getAll = originals.archivos;
+    contenidosService.getAprobados = originals.aprobados;
+    contenidosService.getAll = originals.contenidos;
+    galeriaService.getAll = originals.galeria;
+    if (server) await close(server);
+  }
+});
+
+test('el repositorio de archivos entrega LIMIT y OFFSET como parámetros numéricos', async () => {
+  const queries = [];
+  const repository = createArchivosRepository({
+    db: { query: async (sql, params) => {
+      queries.push({ sql, params });
+      return sql.startsWith('SELECT COUNT') ? [[{ total: 0 }]] : [[]];
+    } },
+  });
+  await repository.findPublicGallery({ page: 1, limit: 20 });
+  assert.match(queries[0].sql, /LIMIT \? OFFSET \?/);
+  assert.deepEqual(queries[0].params, [20, 0]);
+  assert.equal(queries[0].params.every((value) => typeof value === 'number'), true);
+});
+
+test('la aplicación configura exactamente un proxy de confianza', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'app.js'), 'utf8');
+  assert.match(source, /const app = express\(\);\s*app\.set\('trust proxy', 1\);/);
+  assert.doesNotMatch(source, /app\.set\('trust proxy', true\)/);
 });
 
 test('las mutaciones de archivos rechazan catalog:read antes de consultar dependencias', { concurrency: false }, async () => {

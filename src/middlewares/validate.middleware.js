@@ -11,7 +11,11 @@ const validate = (schema, property = 'body') => (req, res, next) => {
       })),
     });
   }
-  req[property] = result.data;
+  if (property === 'query') {
+    res.locals.validated = { ...res.locals.validated, query: result.data };
+  } else {
+    req[property] = result.data;
+  }
   next();
 };
 
