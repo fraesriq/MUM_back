@@ -1,6 +1,32 @@
 const database = require('../../config/database');
+const managementColumns = 'id_lugar, id_comuna, id_coordenada, id_fuente, slug, nombre, descripcion, orden, estado';
+const writableFields = ['id_comuna', 'id_coordenada', 'id_fuente', 'slug', 'nombre', 'descripcion', 'orden'];
 
 function createLugaresRepository({ db = database } = {}) {
+  const findManagementAll = async ({ page, limit, estado, comuna_id }) => {
+    const clauses = [];
+    const params = [];
+    if (estado) { clauses.push('estado = ?'); params.push(estado); }
+    if (comuna_id) { clauses.push('id_comuna = ?'); params.push(comuna_id); }
+    const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
+    const [[{ total }]] = await db.query(`SELECT COUNT(*) AS total FROM lugar${where}`, params);
+    const [items] = await db.query(`SELECT ${managementColumns} FROM lugar${where} ORDER BY id_lugar ASC LIMIT ? OFFSET ?`, [...params, limit, (page - 1) * limit]);
+    return { items, total, page, limit };
+  };
+  const findManagementById = async (id) => (await db.query(`SELECT ${managementColumns} FROM lugar WHERE id_lugar = ?`, [id]))[0][0] || null;
+  const create = async (data) => {
+    const [result] = await db.query(
+      `INSERT INTO lugar (${writableFields.join(', ')}, estado) VALUES (${writableFields.map(() => '?').join(', ')}, 'pendiente')`,
+      writableFields.map((field) => data[field])
+    );
+    return findManagementById(result.insertId);
+  };
+  const update = async (id, data) => {
+    const fields = writableFields.filter((field) => data[field] !== undefined);
+    if (!fields.length) throw new Error('La actualización requiere al menos un campo permitido.');
+    await db.query(`UPDATE lugar SET ${fields.map((field) => `${field} = ?`).join(', ')} WHERE id_lugar = ?`, [...fields.map((field) => data[field]), id]);
+    return findManagementById(id);
+  };
   // Listado de los 8 sectores con su comuna, provincia, región y coordenada — RF04, RN03
   const findAll = async () => {
     const [rows] = await db.query(
@@ -60,7 +86,7 @@ function createLugaresRepository({ db = database } = {}) {
     return { ...lugar, archivos };
   };
 
-  return { findAll, findBySlug };
+  return { findAll, findBySlug, findManagementAll, findManagementById, create, update };
 }
 
 module.exports = { createLugaresRepository, ...createLugaresRepository() };
