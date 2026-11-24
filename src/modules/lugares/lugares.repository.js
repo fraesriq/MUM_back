@@ -27,6 +27,14 @@ function createLugaresRepository({ db = database } = {}) {
     await db.query(`UPDATE lugar SET ${fields.map((field) => `${field} = ?`).join(', ')} WHERE id_lugar = ?`, [...fields.map((field) => data[field]), id]);
     return findManagementById(id);
   };
+  const setEstado = async (id, estado) => (await db.query(
+    'UPDATE lugar SET estado = ? WHERE id_lugar = ?',
+    [estado, id]
+  ))[0].affectedRows > 0;
+  const remove = async (id) => (await db.query(
+    'DELETE FROM lugar WHERE id_lugar = ?',
+    [id]
+  ))[0].affectedRows > 0;
   // Listado de los 8 sectores con su comuna, provincia, región y coordenada — RF04, RN03
   const findAll = async () => {
     const [rows] = await db.query(
@@ -86,7 +94,7 @@ function createLugaresRepository({ db = database } = {}) {
     return { ...lugar, archivos };
   };
 
-  return { findAll, findBySlug, findManagementAll, findManagementById, create, update };
+  return { findAll, findBySlug, findManagementAll, findManagementById, create, update, setEstado, remove };
 }
 
 module.exports = { createLugaresRepository, ...createLugaresRepository() };

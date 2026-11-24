@@ -7,6 +7,12 @@ function translatePersistenceError(error) {
   if (['ER_NO_REFERENCED_ROW', 'ER_NO_REFERENCED_ROW_2'].includes(error.code)) return operationalError('La comuna, coordenada o fuente indicada no existe.', 409);
   return error;
 }
+function translateDeleteError(error) {
+  if (['ER_ROW_IS_REFERENCED', 'ER_ROW_IS_REFERENCED_2'].includes(error.code)) {
+    return operationalError('No se puede eliminar el lugar porque tiene dependencias.', 409);
+  }
+  return error;
+}
 
 function createLugaresService({ dataRepository = repository, filesService = archivosService } = {}) {
   return {
@@ -27,6 +33,17 @@ function createLugaresService({ dataRepository = repository, filesService = arch
     update: async (id, data) => {
       if (!await dataRepository.findManagementById(id)) throw operationalError('Lugar no encontrado', 404);
       try { return await dataRepository.update(id, data); } catch (error) { throw translatePersistenceError(error); }
+    },
+    approve: async (id, estado) => {
+      const lugar = await dataRepository.findManagementById(id);
+      if (!lugar || !await dataRepository.setEstado(id, estado)) throw operationalError('Lugar no encontrado', 404);
+      return { ...lugar, estado };
+    },
+    remove: async (id) => {
+      try {
+        if (!await dataRepository.remove(id)) throw operationalError('Lugar no encontrado', 404);
+        return { deleted: true };
+      } catch (error) { throw translateDeleteError(error); }
     },
   };
 }

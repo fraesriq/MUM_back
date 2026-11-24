@@ -14,6 +14,7 @@ const fields = {
 };
 const createLugarSchema = z.object(fields).strict();
 const updateLugarSchema = z.object({ ...fields, id_comuna: fields.id_comuna.optional(), slug: fields.slug.optional(), nombre: fields.nombre.optional(), descripcion: fields.descripcion.optional(), orden: orden.optional() }).strict().refine((data) => Object.keys(data).length > 0, 'Debe enviar al menos un campo para actualizar');
+const approvalLugarSchema = z.object({ estado: z.enum(['aprobado', 'rechazado']) }).strict();
 const idParamSchema = z.object({ id: parsedPositive('id') }).strict();
 const managementQuerySchema = z.object({
   page: parsedPositive('page').optional().default(1),
@@ -22,4 +23,4 @@ const managementQuerySchema = z.object({
   comuna_id: parsedPositive('comuna_id').optional(),
 }).strict();
 
-module.exports = { createLugarSchema, updateLugarSchema, idParamSchema, managementQuerySchema };
+module.exports = { createLugarSchema, updateLugarSchema, approvalLugarSchema, idParamSchema, managementQuerySchema };
