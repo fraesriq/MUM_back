@@ -1,7 +1,35 @@
 const db = require('../../config/database');
+const columns = 'id_especie, id_categoria, id_fuente, slug, nombre_comun, nombre_cientifico, descripcion, distribucion_geografica, habitat_ecosistema, alimentacion, habito, reproduccion, estado';
+const writableFields = ['id_categoria', 'id_fuente', 'slug', 'nombre_comun', 'nombre_cientifico', 'descripcion', 'distribucion_geografica', 'habitat_ecosistema', 'alimentacion', 'habito', 'reproduccion'];
+
+function createEspeciesRepository({ database = db } = {}) {
+  const findManagementAll = async ({ page, limit, estado, categoria_id }) => {
+    const clauses = [];
+    const params = [];
+    if (estado) { clauses.push('estado = ?'); params.push(estado); }
+    if (categoria_id) { clauses.push('id_categoria = ?'); params.push(categoria_id); }
+    const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
+    const [[{ total }]] = await database.query(`SELECT COUNT(*) AS total FROM especie${where}`, params);
+    const [items] = await database.query(`SELECT ${columns} FROM especie${where} ORDER BY id_especie ASC LIMIT ? OFFSET ?`, [...params, limit, (page - 1) * limit]);
+    return { items, total, page, limit };
+  };
+  const findManagementById = async (id) => (await database.query(`SELECT ${columns} FROM especie WHERE id_especie = ?`, [id]))[0][0] || null;
+  const create = async (data) => {
+    const values = writableFields.map((field) => data[field] ?? null);
+    const [result] = await database.query(`INSERT INTO especie (${writableFields.join(', ')}, estado) VALUES (${writableFields.map(() => '?').join(', ')}, 'pendiente')`, values);
+    return findManagementById(result.insertId);
+  };
+  const update = async (id, data) => {
+    const fields = writableFields.filter((field) => data[field] !== undefined);
+    if (!fields.length) throw new Error('La actualización requiere al menos un campo permitido.');
+    await database.query(`UPDATE especie SET ${fields.map((field) => `${field} = ?`).join(', ')} WHERE id_especie = ?`, [...fields.map((field) => data[field]), id]);
+    return findManagementById(id);
+  };
+  return { findManagementAll, findManagementById, create, update };
+}
 
 // Listado con filtro opcional por categoría (slug) — RF03
-exports.findAll = async ({ categoria } = {}) => {
+async function findAll({ categoria } = {}) {
   let sql = `
     SELECT e.slug, e.nombre_comun, e.nombre_cientifico, e.descripcion,
            c.nombre AS categoria, c.slug AS categoria_slug
@@ -20,10 +48,10 @@ exports.findAll = async ({ categoria } = {}) => {
 
   const [rows] = await db.query(sql, params);
   return rows;
-};
+}
 
 // Ficha por slug con portada y carrusel multimedia — RF02, RF05
-exports.findBySlug = async (slug) => {
+async function findBySlug(slug) {
   const [especies] = await db.query(
     `SELECT e.slug, e.nombre_comun, e.nombre_cientifico, e.descripcion,
              e.distribucion_geografica, e.habitat_ecosistema, e.alimentacion,
@@ -51,4 +79,6 @@ exports.findBySlug = async (slug) => {
   );
 
   return { ...especie, archivos };
-};
+}
+
+module.exports = { createEspeciesRepository, findAll, findBySlug, ...createEspeciesRepository() };

@@ -1,6 +1,13 @@
 const repository = require('./especies.repository');
 const archivosService = require('../archivos/archivos.service');
 
+function operationalError(message, status) { return Object.assign(new Error(message), { status }); }
+function translatePersistenceError(error) {
+  if (error.code === 'ER_DUP_ENTRY') return operationalError('Ya existe una especie con ese slug.', 409);
+  if (['ER_NO_REFERENCED_ROW', 'ER_NO_REFERENCED_ROW_2'].includes(error.code)) return operationalError('La categoría o fuente indicada no existe.', 409);
+  return error;
+}
+
 function createEspeciesService({ dataRepository = repository, filesService = archivosService } = {}) {
   return {
     getAll: (filtros) => dataRepository.findAll(filtros),
@@ -10,7 +17,21 @@ function createEspeciesService({ dataRepository = repository, filesService = arc
       const { id_especie, id_categoria, id_fuente, estado, ...publicEspecie } = especie;
       return { ...publicEspecie, archivos: await filesService.mapPublicFiles(especie.archivos) };
     },
+    getManagementAll: (filters) => dataRepository.findManagementAll(filters),
+    getManagementById: async (id) => {
+      const especie = await dataRepository.findManagementById(id);
+      if (!especie) throw operationalError('Especie no encontrada', 404);
+      return especie;
+    },
+    create: async (data) => {
+      try { return await dataRepository.create(data); } catch (error) { throw translatePersistenceError(error); }
+    },
+    update: async (id, data) => {
+      const especie = await dataRepository.findManagementById(id);
+      if (!especie) throw operationalError('Especie no encontrada', 404);
+      try { return await dataRepository.update(id, data); } catch (error) { throw translatePersistenceError(error); }
+    },
   };
 }
 
-module.exports = { createEspeciesService, ...createEspeciesService() };
+module.exports = { createEspeciesService, operationalError, ...createEspeciesService() };
