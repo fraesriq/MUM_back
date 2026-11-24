@@ -20,6 +20,10 @@ function createGeografiaRepository({ db = database } = {}) {
     'SELECT id_comuna, id_provincia, nombre FROM comuna WHERE id_provincia = ? ORDER BY nombre ASC',
     [provinciaId]
   ))[0];
+  const findComunaById = async (id) => (await db.query(
+    'SELECT id_comuna, id_provincia, nombre FROM comuna WHERE id_comuna = ?',
+    [id]
+  ))[0][0] || null;
   const createRegion = async ({ nombre }) => {
     const [result] = await db.query('INSERT INTO region (nombre) VALUES (?)', [nombre]);
     return findRegionById(result.insertId);
@@ -40,8 +44,19 @@ function createGeografiaRepository({ db = database } = {}) {
     return findProvinciaById(id);
   };
   const removeProvincia = async (id) => (await db.query('DELETE FROM provincia WHERE id_provincia = ?', [id]))[0].affectedRows > 0;
+  const createComuna = async ({ id_provincia, nombre }) => {
+    const [result] = await db.query('INSERT INTO comuna (id_provincia, nombre) VALUES (?, ?)', [id_provincia, nombre]);
+    return findComunaById(result.insertId);
+  };
+  const updateComuna = async (id, data) => {
+    const fields = ['id_provincia', 'nombre'].filter((field) => data[field] !== undefined);
+    if (!fields.length) throw new Error('La actualización requiere al menos un campo permitido.');
+    await db.query(`UPDATE comuna SET ${fields.map((field) => `${field} = ?`).join(', ')} WHERE id_comuna = ?`, [...fields.map((field) => data[field]), id]);
+    return findComunaById(id);
+  };
+  const removeComuna = async (id) => (await db.query('DELETE FROM comuna WHERE id_comuna = ?', [id]))[0].affectedRows > 0;
 
-  return { findRegiones, findRegionById, findProvinciasByRegionId, findProvinciaById, findComunasByProvinciaId, createRegion, updateRegion, removeRegion, createProvincia, updateProvincia, removeProvincia };
+  return { findRegiones, findRegionById, findProvinciasByRegionId, findProvinciaById, findComunasByProvinciaId, findComunaById, createRegion, updateRegion, removeRegion, createProvincia, updateProvincia, removeProvincia, createComuna, updateComuna, removeComuna };
 }
 
 module.exports = { createGeografiaRepository, ...createGeografiaRepository() };

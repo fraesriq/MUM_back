@@ -2,7 +2,7 @@ const express = require('express');
 const controller = require('./geografia.controller');
 const validate = require('../../middlewares/validate.middleware');
 const { requireScope } = require('../../auth/application.middleware');
-const { idParamSchema, regionSchema, provinciaSchema, updateRegionSchema, updateProvinciaSchema } = require('./geografia.validation');
+const { idParamSchema, regionSchema, provinciaSchema, comunaSchema, updateRegionSchema, updateProvinciaSchema, updateComunaSchema } = require('./geografia.validation');
 
 function createGeografiaRouter({ dataController = controller } = {}) {
   const router = express.Router();
@@ -17,6 +17,10 @@ function createGeografiaRouter({ dataController = controller } = {}) {
   router.post('/provincias', requireScope('catalog:write'), validate(provinciaSchema), dataController.createProvincia);
   router.put('/provincias/:id', requireScope('catalog:write'), validate(idParamSchema, 'params'), validate(updateProvinciaSchema), dataController.updateProvincia);
   router.delete('/provincias/:id', requireScope('catalog:write'), validate(idParamSchema, 'params'), dataController.removeProvincia);
+  router.get('/comunas/:id', requireScope('catalog:write'), validate(idParamSchema, 'params'), dataController.getComunaById);
+  router.post('/comunas', requireScope('catalog:write'), validate(comunaSchema), dataController.createComuna);
+  router.put('/comunas/:id', requireScope('catalog:write'), validate(idParamSchema, 'params'), validate(updateComunaSchema), dataController.updateComuna);
+  router.delete('/comunas/:id', requireScope('catalog:write'), validate(idParamSchema, 'params'), dataController.removeComuna);
   return router;
 }
 

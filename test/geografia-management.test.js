@@ -6,7 +6,7 @@ const { createGeografiaRepository } = require('../src/modules/geografia/geografi
 const { createGeografiaService } = require('../src/modules/geografia/geografia.service');
 const { createGeografiaController } = require('../src/modules/geografia/geografia.controller');
 const { createGeografiaRouter } = require('../src/modules/geografia/geografia.routes');
-const { regionSchema, provinciaSchema, updateRegionSchema, updateProvinciaSchema } = require('../src/modules/geografia/geografia.validation');
+const { regionSchema, provinciaSchema, comunaSchema, updateRegionSchema, updateProvinciaSchema, updateComunaSchema } = require('../src/modules/geografia/geografia.validation');
 
 function request(port, method, path, body, scope = 'catalog:read') {
   return new Promise((resolve, reject) => {
@@ -32,6 +32,7 @@ test('la gestión exige catalog:write y las rutas anidadas no colisionan', { con
     getRegiones: async () => [], getProvinciasByRegionId: async (id) => { calls.push(['nested', id]); return []; }, getComunasByProvinciaId: async (id) => { calls.push(['comunas', id]); return []; },
     getRegionById: async (id) => ({ id_region: id }), createRegion: async (data) => ({ id_region: 1, ...data }), updateRegion: async () => ({}), removeRegion: async () => ({ deleted: true }),
     getProvinciaById: async (id) => ({ id_provincia: id }), createProvincia: async (data) => ({ id_provincia: 1, ...data }), updateProvincia: async () => ({}), removeProvincia: async () => ({ deleted: true }),
+    getComunaById: async (id) => ({ id_comuna: id }), createComuna: async (data) => ({ id_comuna: 1, ...data }), updateComuna: async () => ({}), removeComuna: async () => ({ deleted: true }),
   };
   await withServer(service, async (port) => {
     assert.equal((await request(port, 'GET', '/regiones')).status, 200);
@@ -39,20 +40,29 @@ test('la gestión exige catalog:write y las rutas anidadas no colisionan', { con
     assert.equal((await request(port, 'POST', '/regiones', { nombre: ' Norte ' })).status, 403);
     assert.equal((await request(port, 'POST', '/regiones', { nombre: ' Norte ' }, 'catalog:write')).status, 201);
     assert.equal((await request(port, 'POST', '/provincias', { id_region: 1, nombre: ' Centro ' }, 'catalog:write')).status, 201);
+    assert.equal((await request(port, 'GET', '/comunas/1')).status, 403);
+    assert.equal((await request(port, 'POST', '/comunas', { id_provincia: 1, nombre: ' Centro ' }, 'catalog:write')).status, 201);
+    assert.equal((await request(port, 'GET', '/comunas/1', undefined, 'catalog:write')).status, 200);
+    assert.equal((await request(port, 'PUT', '/comunas/1', { nombre: 'Centro sur' }, 'catalog:write')).status, 200);
+    assert.equal((await request(port, 'DELETE', '/comunas/1', undefined, 'catalog:write')).status, 200);
     assert.deepEqual((await request(port, 'GET', '/regiones/7/provincias')).body, []);
     assert.deepEqual((await request(port, 'GET', '/provincias/8/comunas')).body, []);
     assert.deepEqual(calls, [['nested', 7], ['comunas', 8]]);
     assert.equal((await request(port, 'PUT', '/provincias/1', {}, 'catalog:write')).status, 400);
+    assert.equal((await request(port, 'PUT', '/comunas/1', {}, 'catalog:write')).status, 400);
   });
 });
 
 test('la validación normaliza nombres y rechaza campos inválidos o actualizaciones vacías', () => {
   assert.deepEqual(regionSchema.parse({ nombre: ' Norte ' }), { nombre: 'Norte' });
   assert.deepEqual(provinciaSchema.parse({ id_region: 1, nombre: ' Centro ' }), { id_region: 1, nombre: 'Centro' });
+  assert.deepEqual(comunaSchema.parse({ id_provincia: 1, nombre: ' Centro ' }), { id_provincia: 1, nombre: 'Centro' });
   for (const value of [{ nombre: ' ' }, { nombre: 'A' }, { nombre: 'a'.repeat(101) }, { nombre: 'Norte', otro: true }]) assert.equal(regionSchema.safeParse(value).success, false);
   for (const value of [{ id_region: 0, nombre: 'Centro' }, { id_region: 1.5, nombre: 'Centro' }, { id_region: '1', nombre: 'Centro' }]) assert.equal(provinciaSchema.safeParse(value).success, false);
+  for (const value of [{ id_provincia: 0, nombre: 'Centro' }, { id_provincia: Number.MAX_SAFE_INTEGER + 1, nombre: 'Centro' }, { id_provincia: '1', nombre: 'Centro' }]) assert.equal(comunaSchema.safeParse(value).success, false);
   assert.equal(updateRegionSchema.safeParse({}).success, false);
   assert.equal(updateProvinciaSchema.safeParse({}).success, false);
+  assert.equal(updateComunaSchema.safeParse({}).success, false);
 });
 
 test('el repositorio usa columnas permitidas, parámetros y orden determinista', async () => {
@@ -62,20 +72,29 @@ test('el repositorio usa columnas permitidas, parámetros y orden determinista',
   } } });
   await repository.findRegiones(); await repository.createRegion({ nombre: 'Norte' }); await repository.updateRegion(1, { nombre: 'Sur' }); await repository.removeRegion(1);
   await repository.createProvincia({ id_region: 1, nombre: 'Centro' }); await repository.updateProvincia(4, { nombre: 'Centro sur' }); await repository.removeProvincia(4);
+  await repository.createComuna({ id_provincia: 4, nombre: 'Centro' }); await repository.updateComuna(4, { id_provincia: 5 }); await repository.removeComuna(4);
   await assert.rejects(() => repository.updateProvincia(4, {}), /al menos un campo/);
+  await assert.rejects(() => repository.updateComuna(4, {}), /al menos un campo/);
   assert.match(queries[0].sql, /ORDER BY nombre ASC$/); assert.deepEqual(queries[1].params, ['Norte']); assert.deepEqual(queries[3].params, ['Sur', 1]);
   assert.deepEqual(queries[6].params, [1, 'Centro']); assert.deepEqual(queries[10].params, [4]);
+  assert.deepEqual(queries[11].params, [4, 'Centro']); assert.deepEqual(queries[13].params, [5, 4]); assert.deepEqual(queries[15].params, [4]);
 });
 
 test('el servicio entrega 404 y conflictos 409 sin filtrar SQL', async () => {
-  const absent = createGeografiaService({ dataRepository: { findRegionById: async () => null, findProvinciaById: async () => null, removeRegion: async () => false, removeProvincia: async () => false } });
-  await assert.rejects(() => absent.getRegionById(1), { status: 404 }); await assert.rejects(() => absent.removeProvincia(1), { status: 404 });
+  const absent = createGeografiaService({ dataRepository: { findRegionById: async () => null, findProvinciaById: async () => null, findComunaById: async () => null, removeRegion: async () => false, removeProvincia: async () => false, removeComuna: async () => false } });
+  await assert.rejects(() => absent.getRegionById(1), { status: 404 }); await assert.rejects(() => absent.removeProvincia(1), { status: 404 }); await assert.rejects(() => absent.getComunaById(1), { status: 404 });
   await assert.rejects(() => absent.createProvincia({ id_region: 9, nombre: 'Centro' }), { status: 409, message: 'La región indicada no existe.' });
-  const race = createGeografiaService({ dataRepository: { findRegionById: async () => ({ id_region: 1 }), findProvinciaById: async () => ({ id_provincia: 2 }), createProvincia: async () => { throw { code: 'ER_NO_REFERENCED_ROW', message: 'private SQL' }; }, updateProvincia: async () => { throw { code: 'ER_NO_REFERENCED_ROW_2', message: 'private SQL' }; } } });
+  await assert.rejects(() => absent.createComuna({ id_provincia: 9, nombre: 'Centro' }), { status: 409, message: 'La provincia indicada no existe.' });
+  const race = createGeografiaService({ dataRepository: { findRegionById: async () => ({ id_region: 1 }), findProvinciaById: async () => ({ id_provincia: 2 }), findComunaById: async () => ({ id_comuna: 3 }), createProvincia: async () => { throw { code: 'ER_NO_REFERENCED_ROW', message: 'private SQL' }; }, updateProvincia: async () => { throw { code: 'ER_NO_REFERENCED_ROW_2', message: 'private SQL' }; }, createComuna: async () => { throw { code: 'ER_NO_REFERENCED_ROW', message: 'private SQL' }; }, updateComuna: async () => { throw { code: 'ER_NO_REFERENCED_ROW_2', message: 'private SQL' }; } } });
   await assert.rejects(() => race.createProvincia({ id_region: 1, nombre: 'Centro' }), { status: 409, message: 'La región indicada no existe.' });
   await assert.rejects(() => race.updateProvincia(2, { id_region: 1 }), { status: 409, message: 'La región indicada no existe.' });
+  await assert.rejects(() => race.createComuna({ id_provincia: 2, nombre: 'Centro' }), { status: 409, message: 'La provincia indicada no existe.' });
+  await assert.rejects(() => race.updateComuna(3, { id_provincia: 2 }), { status: 409, message: 'La provincia indicada no existe.' });
   const duplicate = createGeografiaService({ dataRepository: { createRegion: async () => { throw { code: 'ER_DUP_ENTRY', message: 'private SQL' }; } } });
   await assert.rejects(() => duplicate.createRegion({ nombre: 'Norte' }), { status: 409, message: 'Ya existe una región con ese nombre.' });
-  const dependent = createGeografiaService({ dataRepository: { removeRegion: async () => { throw { code: 'ER_ROW_IS_REFERENCED_2', message: 'private SQL' }; } } });
+  const duplicateComuna = createGeografiaService({ dataRepository: { findProvinciaById: async () => ({ id_provincia: 2 }), createComuna: async () => { throw { code: 'ER_DUP_ENTRY', message: 'private SQL' }; } } });
+  await assert.rejects(() => duplicateComuna.createComuna({ id_provincia: 2, nombre: 'Centro' }), { status: 409, message: 'Ya existe una comuna con ese nombre.' });
+  const dependent = createGeografiaService({ dataRepository: { removeRegion: async () => { throw { code: 'ER_ROW_IS_REFERENCED_2', message: 'private SQL' }; }, removeComuna: async () => { throw { code: 'ER_ROW_IS_REFERENCED', message: 'private SQL' }; } } });
   await assert.rejects(() => dependent.removeRegion(1), { status: 409, message: 'No se puede eliminar la región porque tiene provincias dependientes.' });
+  await assert.rejects(() => dependent.removeComuna(1), { status: 409, message: 'No se puede eliminar la comuna porque tiene lugares dependientes.' });
 });

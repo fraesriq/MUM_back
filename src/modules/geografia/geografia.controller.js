@@ -45,6 +45,18 @@ function createGeografiaController({ dataService = service } = {}) {
     removeProvincia: async (req, res, next) => {
       try { res.json(await dataService.removeProvincia(req.params.id)); } catch (error) { next(error); }
     },
+    getComunaById: async (req, res, next) => {
+      try { res.json(await dataService.getComunaById(req.params.id)); } catch (error) { next(error); }
+    },
+    createComuna: async (req, res, next) => {
+      try { res.status(201).json(await dataService.createComuna(req.body)); } catch (error) { next(error); }
+    },
+    updateComuna: async (req, res, next) => {
+      try { res.json(await dataService.updateComuna(req.params.id, req.body)); } catch (error) { next(error); }
+    },
+    removeComuna: async (req, res, next) => {
+      try { res.json(await dataService.removeComuna(req.params.id)); } catch (error) { next(error); }
+    },
   };
 }
 
