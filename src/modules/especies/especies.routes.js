@@ -3,7 +3,7 @@ const router = express.Router();
 const controller = require('./especies.controller');
 const validate = require('../../middlewares/validate.middleware');
 const { requireScope } = require('../../auth/application.middleware');
-const { createEspecieSchema, updateEspecieSchema, approvalEspecieSchema, idParamSchema, associationParamSchema, archivoAssociationSchema, managementQuerySchema } = require('./especies.validation');
+const { createEspecieSchema, updateEspecieSchema, approvalEspecieSchema, idParamSchema, associationParamSchema, archivoAssociationSchema, managementQuerySchema, publicListQuerySchema } = require('./especies.validation');
 
 function createEspeciesRouter({ dataController = controller } = {}) {
   const router = express.Router();
@@ -15,7 +15,7 @@ function createEspeciesRouter({ dataController = controller } = {}) {
   router.put('/:id', requireScope('catalog:write'), validate(idParamSchema, 'params'), validate(updateEspecieSchema), dataController.update);
   router.patch('/:id/aprobar', requireScope('catalog:write'), validate(idParamSchema, 'params'), validate(approvalEspecieSchema), dataController.approve);
   router.delete('/:id', requireScope('catalog:write'), validate(idParamSchema, 'params'), dataController.remove);
-  router.get('/', dataController.getAll);
+  router.get('/', validate(publicListQuerySchema, 'query'), dataController.getAll);
   router.get('/:slug', dataController.getBySlug);
   return router;
 }

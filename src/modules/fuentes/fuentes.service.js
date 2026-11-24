@@ -25,7 +25,11 @@ function createFuentesService({ dataRepository = repository } = {}) {
     },
     update: async (id, data) => {
       await getById(id);
-      try { return toPublicFuente(await dataRepository.update(id, data)); } catch (error) { throw translatePersistenceError(error, 'update'); }
+      try {
+        const fuente = await dataRepository.update(id, data);
+        if (!fuente) throw operationalError('Fuente no encontrada', 404);
+        return toPublicFuente(fuente);
+      } catch (error) { throw translatePersistenceError(error, 'update'); }
     },
     remove: async (id) => {
       try {

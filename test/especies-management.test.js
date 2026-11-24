@@ -6,7 +6,7 @@ const { createEspeciesRepository } = require('../src/modules/especies/especies.r
 const { createEspeciesService } = require('../src/modules/especies/especies.service');
 const { createEspeciesController } = require('../src/modules/especies/especies.controller');
 const { createEspeciesRouter } = require('../src/modules/especies/especies.routes');
-const { createEspecieSchema, updateEspecieSchema, approvalEspecieSchema, associationParamSchema, archivoAssociationSchema, managementQuerySchema } = require('../src/modules/especies/especies.validation');
+const { createEspecieSchema, updateEspecieSchema, approvalEspecieSchema, associationParamSchema, archivoAssociationSchema, managementQuerySchema, publicListQuerySchema } = require('../src/modules/especies/especies.validation');
 
 const valid = { id_categoria: 1, slug: 'zorro-culpeo', nombre_comun: 'Zorro culpeo', descripcion: 'Descripción válida' };
 function request(port, method, path, body, scope = 'catalog:read') {
@@ -61,6 +61,19 @@ test('validación estricta acepta solo campos administrables y enteros seguros',
   assert.equal(updateEspecieSchema.safeParse({ alimentacion: ' ' }).success, false);
   assert.deepEqual(managementQuerySchema.parse({ estado: 'pendiente', categoria_id: '2' }), { page: 1, limit: 20, estado: 'pendiente', categoria_id: 2 });
   for (const query of [{ page: '0' }, { limit: '101' }, { categoria_id: '1.5' }, { estado: 'otro' }]) assert.equal(managementQuerySchema.safeParse(query).success, false);
+  assert.deepEqual(publicListQuerySchema.parse({ categoria: 'aves-nativas' }), { categoria: 'aves-nativas' });
+  for (const query of [{ categoria: 'Aves' }, { categoria: 'a' }, { categoria: ['aves', 'mamiferos'] }, { otro: 'valor' }]) assert.equal(publicListQuerySchema.safeParse(query).success, false);
+});
+
+test('el listado público valida el filtro de categoría antes de consultar el repositorio', { concurrency: false }, async () => {
+  const calls = [];
+  const service = { getAll: async (filters) => { calls.push(filters); return [{ slug: 'zorro-culpeo' }]; } };
+  await withServer(service, async (port) => {
+    assert.deepEqual((await request(port, 'GET', '/?categoria=aves-nativas')).body, [{ slug: 'zorro-culpeo' }]);
+    assert.deepEqual((await request(port, 'GET', '/')).body, [{ slug: 'zorro-culpeo' }]);
+    for (const path of ['/?categoria=Aves', '/?categoria=aves&categoria=mamiferos', '/?otro=valor']) assert.equal((await request(port, 'GET', path)).status, 400);
+  });
+  assert.deepEqual(calls, [{ categoria: 'aves-nativas' }, {}]);
 });
 
 test('validación acepta máximos declarados y rechaza cada desborde', () => {
@@ -96,6 +109,8 @@ test('servicio distingue ausencia y traduce conflictos de creación y actualizac
   const absent = createEspeciesService({ dataRepository: { findManagementById: async () => null } });
   await assert.rejects(() => absent.getManagementById(9), { status: 404, message: 'Especie no encontrada' });
   await assert.rejects(() => absent.update(9, { nombre_comun: 'Zorro' }), { status: 404, message: 'Especie no encontrada' });
+  const deletedDuringUpdate = createEspeciesService({ dataRepository: { findManagementById: async () => ({ id_especie: 1 }), update: async () => null } });
+  await assert.rejects(() => deletedDuringUpdate.update(1, { nombre_comun: 'Zorro' }), { status: 404, message: 'Especie no encontrada' });
   for (const [code, message] of [['ER_DUP_ENTRY', 'Ya existe una especie con ese slug.'], ['ER_NO_REFERENCED_ROW_2', 'La categoría o fuente indicada no existe.']]) {
     const failure = async () => { throw { code, message: 'private SQL' }; };
     const service = createEspeciesService({ dataRepository: { create: failure, findManagementById: async () => ({ id_especie: 1 }), update: failure } });

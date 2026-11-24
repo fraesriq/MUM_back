@@ -4,7 +4,7 @@ function createEspeciesController({ dataService = service } = {}) {
   return {
     getAll: async (req, res, next) => {
       try {
-        const especies = await dataService.getAll({ categoria: req.query.categoria });
+        const especies = await dataService.getAll(res.locals.validated.query);
         res.json(especies);
       } catch (error) { next(error); }
     },

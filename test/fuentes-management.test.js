@@ -70,6 +70,8 @@ test('el servicio responde DTO seguro, 404 y 409 sin filtrar SQL', async () => {
   assert.deepEqual(await service.update(1, { verificada: false }), { id_fuente: 1, titulo: 'Fuente institucional', tipo: 'institucion', autor_institucion: null, url: null, verificada: true });
   const absent = createFuentesService({ dataRepository: { findById: async () => null, remove: async () => false } });
   await assert.rejects(() => absent.getById(9), { status: 404, message: 'Fuente no encontrada' }); await assert.rejects(() => absent.remove(9), { status: 404, message: 'Fuente no encontrada' });
+  const deletedDuringUpdate = createFuentesService({ dataRepository: { findById: async () => row, update: async () => null } });
+  await assert.rejects(() => deletedDuringUpdate.update(1, { verificada: false }), { status: 404, message: 'Fuente no encontrada' });
   const dependent = createFuentesService({ dataRepository: { remove: async () => { throw { code: 'ER_ROW_IS_REFERENCED_2', message: 'private SQL' }; } } });
   await assert.rejects(() => dependent.remove(1), { status: 409, message: 'No se puede eliminar la fuente porque tiene dependencias.' });
 });

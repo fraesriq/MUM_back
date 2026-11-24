@@ -37,7 +37,11 @@ function createLugaresService({ dataRepository = repository, filesService = arch
     },
     update: async (id, data) => {
       if (!await dataRepository.findManagementById(id)) throw operationalError('Lugar no encontrado', 404);
-      try { return await dataRepository.update(id, data); } catch (error) { throw translatePersistenceError(error); }
+      try {
+        const lugar = await dataRepository.update(id, data);
+        if (!lugar) throw operationalError('Lugar no encontrado', 404);
+        return lugar;
+      } catch (error) { throw translatePersistenceError(error); }
     },
     approve: async (id, estado) => {
       const lugar = await dataRepository.findManagementById(id);

@@ -91,6 +91,8 @@ test('servicio aísla la lectura pública y traduce ausencia y conflictos sin SQ
   const absent = createLugaresService({ dataRepository: { findManagementById: async () => null } });
   await assert.rejects(() => absent.getManagementById(9), { status: 404, message: 'Lugar no encontrado' });
   await assert.rejects(() => absent.update(9, { nombre: 'Lugar' }), { status: 404, message: 'Lugar no encontrado' });
+  const deletedDuringUpdate = createLugaresService({ dataRepository: { findManagementById: async () => ({ id_lugar: 1 }), update: async () => null } });
+  await assert.rejects(() => deletedDuringUpdate.update(1, { nombre: 'Lugar' }), { status: 404, message: 'Lugar no encontrado' });
   for (const code of ['ER_DUP_ENTRY', 'ER_NO_REFERENCED_ROW_2']) {
     const failure = async () => { throw { code, message: 'private SQL' }; };
     const service = createLugaresService({ dataRepository: { create: failure, findManagementById: async () => ({ id_lugar: 1 }), update: failure } });

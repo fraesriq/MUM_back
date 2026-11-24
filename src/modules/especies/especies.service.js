@@ -42,7 +42,11 @@ function createEspeciesService({ dataRepository = repository, filesService = arc
     update: async (id, data) => {
       const especie = await dataRepository.findManagementById(id);
       if (!especie) throw operationalError('Especie no encontrada', 404);
-      try { return await dataRepository.update(id, data); } catch (error) { throw translatePersistenceError(error); }
+      try {
+        const updated = await dataRepository.update(id, data);
+        if (!updated) throw operationalError('Especie no encontrada', 404);
+        return updated;
+      } catch (error) { throw translatePersistenceError(error); }
     },
     approve: async (id, estado) => {
       const especie = await dataRepository.findManagementById(id);

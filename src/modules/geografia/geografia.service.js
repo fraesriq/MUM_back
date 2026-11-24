@@ -52,7 +52,11 @@ function createGeografiaService({ dataRepository = repository } = {}) {
     },
     updateRegion: async (id, data) => {
       await getRegionById(id);
-      try { return await dataRepository.updateRegion(id, data); } catch (error) { throw translatePersistenceError(error, 'update', 'region'); }
+      try {
+        const region = await dataRepository.updateRegion(id, data);
+        if (!region) throw operationalError('Región no encontrada', 404);
+        return region;
+      } catch (error) { throw translatePersistenceError(error, 'update', 'region'); }
     },
     removeRegion: async (id) => {
       try {
@@ -68,7 +72,11 @@ function createGeografiaService({ dataRepository = repository } = {}) {
     updateProvincia: async (id, data) => {
       await getProvinciaById(id);
       if (data.id_region !== undefined) await ensureRegionExists(data.id_region);
-      try { return await dataRepository.updateProvincia(id, data); } catch (error) { throw translatePersistenceError(error, 'update', 'provincia'); }
+      try {
+        const provincia = await dataRepository.updateProvincia(id, data);
+        if (!provincia) throw operationalError('Provincia no encontrada', 404);
+        return provincia;
+      } catch (error) { throw translatePersistenceError(error, 'update', 'provincia'); }
     },
     removeProvincia: async (id) => {
       try {
@@ -84,7 +92,11 @@ function createGeografiaService({ dataRepository = repository } = {}) {
     updateComuna: async (id, data) => {
       await getComunaById(id);
       if (data.id_provincia !== undefined) await ensureProvinciaExists(data.id_provincia);
-      try { return await dataRepository.updateComuna(id, data); } catch (error) { throw translatePersistenceError(error, 'update', 'comuna'); }
+      try {
+        const comuna = await dataRepository.updateComuna(id, data);
+        if (!comuna) throw operationalError('Comuna no encontrada', 404);
+        return comuna;
+      } catch (error) { throw translatePersistenceError(error, 'update', 'comuna'); }
     },
     removeComuna: async (id) => {
       try {

@@ -33,6 +33,9 @@ const managementQuerySchema = z.object({
   estado: z.enum(['pendiente', 'aprobado', 'rechazado']).optional(),
   categoria_id: positiveQuery('categoria_id').optional(),
 }).strict();
+const publicListQuerySchema = z.object({
+  categoria: z.string().min(2, 'El slug debe tener al menos 2 caracteres').max(90, 'El slug no puede superar 90 caracteres').regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'El slug debe usar minúsculas y guiones').optional(),
+}).strict();
 
 module.exports = {
   createEspecieSchema,
@@ -42,4 +45,5 @@ module.exports = {
   associationParamSchema,
   archivoAssociationSchema,
   managementQuerySchema,
+  publicListQuerySchema,
 };

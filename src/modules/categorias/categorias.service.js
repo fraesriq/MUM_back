@@ -26,7 +26,11 @@ function createCategoriasService({ dataRepository = repository } = {}) {
     },
     update: async (id, data) => {
       await getById(id);
-      try { return await dataRepository.update(id, data); } catch (error) { throw translatePersistenceError(error, 'update'); }
+      try {
+        const categoria = await dataRepository.update(id, data);
+        if (!categoria) throw operationalError('Categoría no encontrada', 404);
+        return categoria;
+      } catch (error) { throw translatePersistenceError(error, 'update'); }
     },
     remove: async (id) => {
       try {

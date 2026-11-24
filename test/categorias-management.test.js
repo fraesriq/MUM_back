@@ -92,6 +92,8 @@ test('el servicio responde 404 y traduce conflictos de persistencia sin exponer 
   const absent = createCategoriasService({ dataRepository: { findAll: async () => [], findById: async () => null, create: async () => {}, update: async () => {}, remove: async () => false } });
   await assert.rejects(() => absent.getById(9), { status: 404, message: 'Categoría no encontrada' });
   await assert.rejects(() => absent.remove(9), { status: 404, message: 'Categoría no encontrada' });
+  const deletedDuringUpdate = createCategoriasService({ dataRepository: { findById: async () => ({ id_categoria: 1 }), update: async () => null } });
+  await assert.rejects(() => deletedDuringUpdate.update(1, { nombre: 'Aves' }), { status: 404, message: 'Categoría no encontrada' });
   const duplicate = createCategoriasService({ dataRepository: { create: async () => { throw { code: 'ER_DUP_ENTRY', message: 'SQL private' }; } } });
   await assert.rejects(() => duplicate.create({}), { status: 409, message: 'Ya existe una categoría con ese nombre o slug.' });
   const dependent = createCategoriasService({ dataRepository: { remove: async () => { throw { code: 'ER_ROW_IS_REFERENCED_2', message: 'SQL private' }; } } });
