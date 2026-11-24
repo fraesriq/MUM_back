@@ -1,5 +1,6 @@
 const repository = require('./especies.repository');
 const archivosService = require('../archivos/archivos.service');
+const archivosRepository = require('../archivos/archivos.repository');
 
 function operationalError(message, status) { return Object.assign(new Error(message), { status }); }
 function translatePersistenceError(error) {
@@ -15,7 +16,12 @@ function translateDeleteError(error) {
   return error;
 }
 
-function createEspeciesService({ dataRepository = repository, filesService = archivosService } = {}) {
+function translateAssociationError(error) {
+  if (['ER_NO_REFERENCED_ROW', 'ER_NO_REFERENCED_ROW_2'].includes(error.code)) return operationalError('La especie o el archivo no existe.', 404);
+  return operationalError('Error interno del servidor', 500);
+}
+
+function createEspeciesService({ dataRepository = repository, filesService = archivosService, filesRepository = archivosRepository } = {}) {
   return {
     getAll: (filtros) => dataRepository.findAll(filtros),
     getBySlug: async (slug) => {
@@ -48,6 +54,21 @@ function createEspeciesService({ dataRepository = repository, filesService = arc
         if (!await dataRepository.remove(id)) throw operationalError('Especie no encontrada', 404);
         return { deleted: true };
       } catch (error) { throw translateDeleteError(error); }
+    },
+    associateArchivo: async (id, archivoId, data) => {
+      try {
+        if (!await dataRepository.findManagementById(id)) throw operationalError('Especie no encontrada', 404);
+        if (!await filesRepository.findById(archivoId)) throw operationalError('Archivo no encontrado', 404);
+        return await dataRepository.upsertArchivoAssociation(id, archivoId, data);
+      } catch (error) { if (error.status) throw error; throw translateAssociationError(error); }
+    },
+    removeArchivoAssociation: async (id, archivoId) => {
+      try {
+        if (!await dataRepository.findManagementById(id)) throw operationalError('Especie no encontrada', 404);
+        if (!await filesRepository.findById(archivoId)) throw operationalError('Archivo no encontrado', 404);
+        if (!await dataRepository.removeArchivoAssociation(id, archivoId)) throw operationalError('La asociación de especie y archivo no existe.', 404);
+        return { deleted: true };
+      } catch (error) { if (error.status) throw error; throw translateAssociationError(error); }
     },
   };
 }

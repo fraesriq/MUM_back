@@ -6,7 +6,7 @@ const { createEspeciesRepository } = require('../src/modules/especies/especies.r
 const { createEspeciesService } = require('../src/modules/especies/especies.service');
 const { createEspeciesController } = require('../src/modules/especies/especies.controller');
 const { createEspeciesRouter } = require('../src/modules/especies/especies.routes');
-const { createEspecieSchema, updateEspecieSchema, approvalEspecieSchema, managementQuerySchema } = require('../src/modules/especies/especies.validation');
+const { createEspecieSchema, updateEspecieSchema, approvalEspecieSchema, associationParamSchema, archivoAssociationSchema, managementQuerySchema } = require('../src/modules/especies/especies.validation');
 
 const valid = { id_categoria: 1, slug: 'zorro-culpeo', nombre_comun: 'Zorro culpeo', descripcion: 'Descripción válida' };
 function request(port, method, path, body, scope = 'catalog:read') {
@@ -109,4 +109,59 @@ test('servicio distingue ausencia y traduce conflictos de creación y actualizac
   assert.deepEqual(await lifecycle.approve(1, 'rechazado'), { id_especie: 1, estado: 'rechazado' });
   const dependent = createEspeciesService({ dataRepository: { remove: async () => { throw { code: 'ER_ROW_IS_REFERENCED_2', message: 'private SQL' }; } } });
   await assert.rejects(() => dependent.remove(1), { status: 409, message: 'No se puede eliminar la especie porque tiene dependencias.' });
+});
+
+test('asociación de archivo exige escritura, ruta específica y cuerpo estricto', { concurrency: false }, async () => {
+  const calls = [];
+  const service = {
+    getAll: async () => [], getBySlug: async (slug) => ({ slug }), getManagementAll: async () => ({}), getManagementById: async () => ({}), create: async () => ({}), update: async () => ({}), approve: async () => ({}), remove: async () => ({}),
+    associateArchivo: async (...args) => { calls.push(args); return { id_especie: args[0], id_archivo: args[1], ...args[2] }; }, removeArchivoAssociation: async () => ({ deleted: true }),
+  };
+  await withServer(service, async (port) => {
+    const body = { es_portada_ficha: true, orden_carrusel: 0 };
+    assert.equal((await request(port, 'PUT', '/7/archivos/9', body)).status, 403);
+    assert.deepEqual((await request(port, 'PUT', '/7/archivos/9', body, 'catalog:write')).body, { id_especie: 7, id_archivo: 9, ...body });
+    assert.deepEqual(calls, [[7, 9, body]]);
+    for (const [path, invalid] of [['/0/archivos/9', body], ['/7/archivos/1.5', body], ['/7/archivos/9', { es_portada_ficha: 1, orden_carrusel: 0 }], ['/7/archivos/9', { es_portada_ficha: true, orden_carrusel: 65536 }]]) assert.equal((await request(port, 'PUT', path, invalid, 'catalog:write')).status, 400);
+    assert.deepEqual((await request(port, 'DELETE', '/7/archivos/9', undefined, 'catalog:write')).body, { deleted: true });
+    assert.deepEqual((await request(port, 'GET', '/zorro-culpeo')).body, { slug: 'zorro-culpeo' });
+  });
+  assert.deepEqual(associationParamSchema.parse({ id: '1', archivoId: '2' }), { id: 1, archivoId: 2 });
+  assert.equal(archivoAssociationSchema.safeParse({ es_portada_ficha: false, orden_carrusel: -1 }).success, false);
+});
+
+test('repositorio asocia idempotentemente con SQL parametrizado y DTO booleano', async () => {
+  const queries = [];
+  const repository = createEspeciesRepository({ database: { query: async (sql, params) => {
+    queries.push({ sql, params });
+    if (sql.startsWith('SELECT id_especie, id_archivo')) return [[{ id_especie: 7, id_archivo: 9, es_portada_ficha: 1, orden_carrusel: 2 }]];
+    return [{ affectedRows: 1 }];
+  } } });
+  assert.deepEqual(await repository.upsertArchivoAssociation(7, 9, { es_portada_ficha: true, orden_carrusel: 2 }), { id_especie: 7, id_archivo: 9, es_portada_ficha: true, orden_carrusel: 2 });
+  assert.match(queries[0].sql, /^INSERT INTO especie_archivo .* ON DUPLICATE KEY UPDATE /);
+  assert.deepEqual(queries[0].params, [7, 9, 1, 2]);
+  assert.equal(await repository.removeArchivoAssociation(7, 9), true);
+  assert.match(queries[2].sql, /^DELETE FROM especie_archivo WHERE id_especie = \? AND id_archivo = \?$/);
+  assert.deepEqual(queries[2].params, [7, 9]);
+});
+
+test('servicio de asociación distingue ausencias, carrera FK y asociación faltante', async () => {
+  const existing = { findManagementById: async () => ({ id_especie: 7 }), upsertArchivoAssociation: async (id, file, data) => ({ id_especie: id, id_archivo: file, ...data }), removeArchivoAssociation: async () => false };
+  const files = { findById: async () => ({ id_archivo: 9 }) };
+  const service = createEspeciesService({ dataRepository: existing, filesRepository: files, filesService: { mapPublicFiles: async () => [] } });
+  assert.deepEqual(await service.associateArchivo(7, 9, { es_portada_ficha: false, orden_carrusel: 1 }), { id_especie: 7, id_archivo: 9, es_portada_ficha: false, orden_carrusel: 1 });
+  await assert.rejects(() => service.removeArchivoAssociation(7, 9), { status: 404, message: 'La asociación de especie y archivo no existe.' });
+  await assert.rejects(() => createEspeciesService({ dataRepository: { ...existing, findManagementById: async () => null }, filesRepository: files }).associateArchivo(7, 9, {}), { status: 404, message: 'Especie no encontrada' });
+  await assert.rejects(() => createEspeciesService({ dataRepository: existing, filesRepository: { findById: async () => null } }).associateArchivo(7, 9, {}), { status: 404, message: 'Archivo no encontrado' });
+  await assert.rejects(() => createEspeciesService({ dataRepository: { ...existing, upsertArchivoAssociation: async () => { throw { code: 'ER_NO_REFERENCED_ROW_2', message: 'private SQL' }; } }, filesRepository: files }).associateArchivo(7, 9, {}), { status: 404, message: 'La especie o el archivo no existe.' });
+  await assert.rejects(() => createEspeciesService({ dataRepository: { ...existing, upsertArchivoAssociation: async () => { throw new Error('private SQL'); } }, filesRepository: files }).associateArchivo(7, 9, {}), { status: 500, message: 'Error interno del servidor' });
+});
+
+test('la proyección pública de archivos de especie conserva portada y orden', async () => {
+  const files = [{ id_archivo: 9, ruta: 'archivos/foto/a.webp', es_portada_ficha: 1, orden_carrusel: 2 }];
+  const service = createEspeciesService({
+    dataRepository: { findBySlug: async () => ({ id_especie: 7, id_categoria: 1, id_fuente: null, estado: 'aprobado', slug: 'zorro', archivos: files }) },
+    filesService: { mapPublicFiles: async (items) => items.map(({ ruta, ...item }) => ({ ...item, url: `https://get.test/${ruta}` })) },
+  });
+  assert.deepEqual((await service.getBySlug('zorro')).archivos, [{ id_archivo: 9, es_portada_ficha: 1, orden_carrusel: 2, url: 'https://get.test/archivos/foto/a.webp' }]);
 });

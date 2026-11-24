@@ -21,6 +21,11 @@ const updateEspecieSchema = z.object(Object.fromEntries(Object.entries(fields).m
 const approvalEspecieSchema = z.object({ estado: z.enum(['aprobado', 'rechazado']) }).strict();
 const parsedPositive = (name) => z.string().regex(/^\d+$/, `${name} debe ser un entero positivo`).transform(Number).refine((value) => Number.isSafeInteger(value) && value > 0, `${name} debe ser un entero positivo seguro`);
 const idParamSchema = z.object({ id: parsedPositive('id') }).strict();
+const associationParamSchema = z.object({ id: parsedPositive('id'), archivoId: parsedPositive('archivoId') }).strict();
+const archivoAssociationSchema = z.object({
+  es_portada_ficha: z.boolean(),
+  orden_carrusel: z.number().int('orden_carrusel debe ser entero').min(0, 'orden_carrusel no puede ser negativo').max(65535, 'orden_carrusel no puede superar 65535'),
+}).strict();
 const positiveQuery = (name) => parsedPositive(name);
 const managementQuerySchema = z.object({
   page: positiveQuery('page').optional().default(1),
@@ -34,5 +39,7 @@ module.exports = {
   updateEspecieSchema,
   approvalEspecieSchema,
   idParamSchema,
+  associationParamSchema,
+  archivoAssociationSchema,
   managementQuerySchema,
 };

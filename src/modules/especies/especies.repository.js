@@ -3,6 +3,7 @@ const columns = 'id_especie, id_categoria, id_fuente, slug, nombre_comun, nombre
 const writableFields = ['id_categoria', 'id_fuente', 'slug', 'nombre_comun', 'nombre_cientifico', 'descripcion', 'distribucion_geografica', 'habitat_ecosistema', 'alimentacion', 'habito', 'reproduccion'];
 
 function createEspeciesRepository({ database = db } = {}) {
+  const toArchivoAssociationDto = ({ id_especie, id_archivo, es_portada_ficha, orden_carrusel }) => ({ id_especie, id_archivo, es_portada_ficha: Boolean(es_portada_ficha), orden_carrusel });
   const findManagementAll = async ({ page, limit, estado, categoria_id }) => {
     const clauses = [];
     const params = [];
@@ -33,7 +34,16 @@ function createEspeciesRepository({ database = db } = {}) {
     'DELETE FROM especie WHERE id_especie = ?',
     [id]
   ))[0].affectedRows > 0;
-  return { findManagementAll, findManagementById, create, update, setEstado, remove };
+  const findArchivoAssociation = async (id, archivoId) => {
+    const row = (await database.query('SELECT id_especie, id_archivo, es_portada_ficha, orden_carrusel FROM especie_archivo WHERE id_especie = ? AND id_archivo = ?', [id, archivoId]))[0][0];
+    return row ? toArchivoAssociationDto(row) : null;
+  };
+  const upsertArchivoAssociation = async (id, archivoId, data) => {
+    await database.query('INSERT INTO especie_archivo (id_especie, id_archivo, es_portada_ficha, orden_carrusel) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE es_portada_ficha = VALUES(es_portada_ficha), orden_carrusel = VALUES(orden_carrusel)', [id, archivoId, Number(data.es_portada_ficha), data.orden_carrusel]);
+    return findArchivoAssociation(id, archivoId);
+  };
+  const removeArchivoAssociation = async (id, archivoId) => (await database.query('DELETE FROM especie_archivo WHERE id_especie = ? AND id_archivo = ?', [id, archivoId]))[0].affectedRows > 0;
+  return { findManagementAll, findManagementById, create, update, setEstado, remove, findArchivoAssociation, upsertArchivoAssociation, removeArchivoAssociation };
 }
 
 // Listado con filtro opcional por categoría (slug) — RF03

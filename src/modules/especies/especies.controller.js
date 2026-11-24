@@ -33,6 +33,12 @@ function createEspeciesController({ dataService = service } = {}) {
     remove: async (req, res, next) => {
       try { res.json(await dataService.remove(req.params.id)); } catch (error) { next(error); }
     },
+    associateArchivo: async (req, res, next) => {
+      try { res.json(await dataService.associateArchivo(req.params.id, req.params.archivoId, req.body)); } catch (error) { next(error); }
+    },
+    removeArchivoAssociation: async (req, res, next) => {
+      try { res.json(await dataService.removeArchivoAssociation(req.params.id, req.params.archivoId)); } catch (error) { next(error); }
+    },
   };
 }
 
