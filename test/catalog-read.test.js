@@ -136,6 +136,14 @@ test('los IDs inválidos responden 400 antes de acceder a los controladores', { 
     getRegiones: (req, res) => res.json([]),
     getProvinciasByRegionId: () => { calls += 1; },
     getComunasByProvinciaId: () => { calls += 1; },
+    getRegionById: () => { calls += 1; },
+    createRegion: () => { calls += 1; },
+    updateRegion: () => { calls += 1; },
+    removeRegion: () => { calls += 1; },
+    getProvinciaById: () => { calls += 1; },
+    createProvincia: () => { calls += 1; },
+    updateProvincia: () => { calls += 1; },
+    removeProvincia: () => { calls += 1; },
   };
   try {
     const app = express();
