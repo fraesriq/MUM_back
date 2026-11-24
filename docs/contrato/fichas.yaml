@@ -1,0 +1,517 @@
+paths:
+  /api/v1/especies:
+    get:
+      operationId: fichasListarEspecies
+      summary: Listar especies aprobadas
+      description: Sin paginación. Orden ascendente por orden de categoría y nombre común. Solo se acepta la consulta indicada.
+      x-required-scope: catalog:read
+      parameters:
+        - {in: query, name: categoria, description: Slug de categoría, schema: {type: string, minLength: 2, maxLength: 90, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'}, example: aves}
+      responses:
+        '200': {description: Lista pública, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ResumenEspecie'}}}}}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    post:
+      operationId: fichasCrearEspecie
+      summary: Crear una especie pendiente de aprobación
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AltaEspecie'}}}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '201': {$ref: '#/components/responses/EspecieGestion'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: Slug duplicado o categoría o fuente inexistente.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/especies/gestion:
+    get:
+      operationId: fichasPaginarEspecies
+      summary: Consultar especies de gestión por ID ascendente
+      description: Incluye todos los estados por defecto. Los filtros se combinan y se rechazan parámetros desconocidos.
+      x-required-scope: catalog:write
+      parameters:
+        - {$ref: '#/components/parameters/Pagina'}
+        - {$ref: '#/components/parameters/Limite'}
+        - {$ref: '#/components/parameters/Estado'}
+        - {in: query, name: categoria_id, schema: {$ref: '#/components/schemas/IdPositivo'}}
+      responses:
+        '200': {description: Página de especies, content: {application/json: {schema: {$ref: '#/components/schemas/PaginaEspecies'}}}}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/especies/gestion/{id}:
+    get:
+      operationId: fichasConsultarEspecieGestion
+      summary: Obtener la especie por ID sin filtrar por estado
+      x-required-scope: catalog:write
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '200': {$ref: '#/components/responses/EspecieGestion'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/especies/{identificador}:
+    get:
+      operationId: fichasConsultarEspeciePublica
+      summary: Obtener una especie aprobada por slug
+      x-required-scope: catalog:read
+      parameters: [{$ref: '#/components/parameters/SlugPublico'}]
+      responses:
+        '200': {description: Detalle público con archivos autorizados, content: {application/json: {schema: {$ref: '#/components/schemas/DetalleEspecie'}}}}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Especie inexistente o no aprobada.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    put:
+      operationId: fichasEditarEspecie
+      summary: Actualizar la especie por ID conservando los campos omitidos
+      description: A diferencia del PUT de lugares, exige slug y nombre_comun incluso si solo cambia otro campo.
+      x-required-scope: catalog:write
+      parameters: [{$ref: '#/components/parameters/IdentificadorNumerico'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/EdicionEspecie'}}}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': {$ref: '#/components/responses/EspecieGestion'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound'}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: Slug duplicado o categoría o fuente inexistente.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    delete:
+      operationId: fichasEliminarEspecie
+      summary: Eliminar la especie por ID
+      x-required-scope: catalog:write
+      parameters: [{$ref: '#/components/parameters/IdentificadorNumerico'}]
+      responses:
+        '200': {$ref: '#/components/responses/EliminacionFicha'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound'}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: La especie tiene dependencias.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/especies/{id}/aprobar:
+    patch:
+      operationId: fichasResolverEspecie
+      summary: Aprobar o rechazar una especie
+      x-required-scope: catalog:write
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      requestBody: {$ref: '#/components/requestBodies/Resolucion'}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': {$ref: '#/components/responses/EspecieGestion'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/especies/{id}/archivos/{archivoId}:
+    parameters: [{$ref: '#/components/parameters/Id'}, {$ref: '#/components/parameters/ArchivoId'}]
+    put:
+      operationId: fichasAsociarArchivoEspecie
+      summary: Crear o actualizar la asociación de la especie con un archivo
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/VinculoEspecieEntrada'}}}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': {description: Asociación guardada, content: {application/json: {schema: {$ref: '#/components/schemas/VinculoEspecie'}}}}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: No existe la especie o el archivo.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    delete:
+      operationId: fichasDesasociarArchivoEspecie
+      summary: Eliminar el vínculo sin borrar el archivo
+      x-required-scope: catalog:write
+      responses:
+        '200': {$ref: '#/components/responses/EliminacionFicha'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: 'Falta la especie, el archivo o su asociación.'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/lugares:
+    get:
+      operationId: fichasListarLugares
+      summary: Listar lugares aprobados por orden ascendente
+      description: No aplica filtros ni paginación. Sin coordenada confirmada se ocultan latitud, longitud y URL de mapa.
+      x-required-scope: catalog:read
+      responses:
+        '200': {description: Lista pública, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ResumenLugar'}}}}}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    post:
+      operationId: fichasCrearLugar
+      summary: Crear un lugar pendiente de aprobación
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AltaLugar'}}}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '201': {$ref: '#/components/responses/LugarGestion'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: 'Slug o coordenada en uso; comuna, coordenada o fuente inexistente.'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/lugares/gestion:
+    get:
+      operationId: fichasPaginarLugares
+      summary: Consultar lugares de gestión por ID ascendente
+      description: Incluye todos los estados por defecto. Los filtros se combinan y se rechazan parámetros desconocidos.
+      x-required-scope: catalog:write
+      parameters:
+        - {$ref: '#/components/parameters/Pagina'}
+        - {$ref: '#/components/parameters/Limite'}
+        - {$ref: '#/components/parameters/Estado'}
+        - {in: query, name: comuna_id, schema: {$ref: '#/components/schemas/IdPositivo'}}
+      responses:
+        '200': {description: Página de lugares, content: {application/json: {schema: {$ref: '#/components/schemas/PaginaLugares'}}}}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/lugares/gestion/{id}:
+    get:
+      operationId: fichasConsultarLugarGestion
+      summary: Obtener el lugar por ID sin filtrar por estado
+      x-required-scope: catalog:write
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      responses:
+        '200': {$ref: '#/components/responses/LugarGestion'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/lugares/{identificador}:
+    get:
+      operationId: fichasConsultarLugarPublico
+      summary: Obtener un lugar aprobado por slug
+      x-required-scope: catalog:read
+      parameters: [{$ref: '#/components/parameters/SlugPublico'}]
+      responses:
+        '200': {description: Detalle público con archivos autorizados, content: {application/json: {schema: {$ref: '#/components/schemas/DetalleLugar'}}}}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Lugar inexistente o no aprobado.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    put:
+      operationId: fichasEditarLugar
+      summary: Actualizar uno o más campos del lugar por ID
+      x-required-scope: catalog:write
+      parameters: [{$ref: '#/components/parameters/IdentificadorNumerico'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/EdicionLugar'}}}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': {$ref: '#/components/responses/LugarGestion'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound'}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: 'Slug o coordenada en uso; comuna, coordenada o fuente inexistente.'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    delete:
+      operationId: fichasEliminarLugar
+      summary: Eliminar el lugar por ID
+      x-required-scope: catalog:write
+      parameters: [{$ref: '#/components/parameters/IdentificadorNumerico'}]
+      responses:
+        '200': {$ref: '#/components/responses/EliminacionFicha'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound'}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: El lugar tiene dependencias.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/lugares/{id}/aprobar:
+    patch:
+      operationId: fichasResolverLugar
+      summary: Aprobar o rechazar un lugar
+      x-required-scope: catalog:write
+      parameters: [{$ref: '#/components/parameters/Id'}]
+      requestBody: {$ref: '#/components/requestBodies/Resolucion'}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': {$ref: '#/components/responses/LugarGestion'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/lugares/{id}/archivos/{archivoId}:
+    parameters: [{$ref: '#/components/parameters/Id'}, {$ref: '#/components/parameters/ArchivoId'}]
+    put:
+      operationId: fichasAsociarArchivoLugar
+      summary: Crear o actualizar la asociación del lugar con un archivo
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/VinculoLugarEntrada'}}}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': {description: Asociación guardada, content: {application/json: {schema: {$ref: '#/components/schemas/VinculoLugar'}}}}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: No existe el lugar o el archivo.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    delete:
+      operationId: fichasDesasociarArchivoLugar
+      summary: Eliminar el vínculo sin borrar el archivo
+      x-required-scope: catalog:write
+      responses:
+        '200': {$ref: '#/components/responses/EliminacionFicha'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: 'Falta el lugar, el archivo o su asociación.'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+
+components:
+  parameters:
+    SlugPublico:
+      in: path
+      name: identificador
+      description: Slug literal sin validación de formato en lectura. El segmento gestion selecciona la ruta de gestión.
+      required: true
+      schema: {type: string}
+    IdentificadorNumerico: {in: path, name: identificador, required: true, schema: {$ref: '#/components/schemas/IdPositivo'}}
+    Id: {in: path, name: id, required: true, schema: {$ref: '#/components/schemas/IdPositivo'}}
+    ArchivoId: {in: path, name: archivoId, required: true, schema: {$ref: '#/components/schemas/IdPositivo'}}
+    Pagina: {in: query, name: page, description: Página desde 1 (solo dígitos decimales), schema: {$ref: '#/components/schemas/IdPositivo', default: 1}}
+    Limite: {in: query, name: limit, description: Tamaño de página (solo dígitos decimales), schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+    Estado: {in: query, name: estado, schema: {$ref: '#/components/schemas/EstadoFicha'}}
+  requestBodies:
+    Resolucion:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [estado]
+            properties: {estado: {type: string, enum: [aprobado, rechazado]}}
+          example: {estado: aprobado}
+  responses:
+    EspecieGestion:
+      description: Especie con sus identificadores y estado actual.
+      content: {application/json: {schema: {$ref: '#/components/schemas/EspecieGestion'}}}
+    LugarGestion:
+      description: Lugar con sus identificadores y estado actual.
+      content: {application/json: {schema: {$ref: '#/components/schemas/LugarGestion'}}}
+    EliminacionFicha:
+      description: Eliminación confirmada.
+      content: {application/json: {schema: {type: object, required: [deleted], properties: {deleted: {type: boolean, const: true}}}, example: {deleted: true}}}
+  schemas:
+    IdPositivo: {type: integer, minimum: 1, maximum: 9007199254740991, description: Entero seguro positivo. En ruta y consulta solo se aceptan dígitos decimales.}
+    IdOpcional: {type: [integer, 'null'], minimum: 1, maximum: 9007199254740991}
+    OrdenFicha: {type: integer, minimum: 0, maximum: 65535}
+    EstadoFicha: {type: string, enum: [pendiente, aprobado, rechazado]}
+    SlugFicha: {type: string, minLength: 2, maxLength: 180, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'}
+    TextoFicha: {type: string, minLength: 1, maxLength: 10000}
+    TextoOpcional: {type: [string, 'null'], minLength: 1, maxLength: 10000}
+    NombreFicha: {type: string, minLength: 2, maxLength: 150}
+    CamposEspecie:
+      type: object
+      description: Salvo el slug, se recortan los extremos de los textos antes de validar su longitud.
+      properties:
+        id_categoria: {$ref: '#/components/schemas/IdPositivo'}
+        id_fuente: {$ref: '#/components/schemas/IdOpcional'}
+        slug: {$ref: '#/components/schemas/SlugFicha'}
+        nombre_comun: {$ref: '#/components/schemas/NombreFicha'}
+        nombre_cientifico: {type: [string, 'null'], minLength: 2, maxLength: 200}
+        descripcion: {$ref: '#/components/schemas/TextoFicha'}
+        distribucion_geografica: {$ref: '#/components/schemas/TextoOpcional'}
+        habitat_ecosistema: {$ref: '#/components/schemas/TextoOpcional'}
+        alimentacion: {$ref: '#/components/schemas/TextoOpcional'}
+        habito: {$ref: '#/components/schemas/TextoOpcional'}
+        reproduccion: {$ref: '#/components/schemas/TextoOpcional'}
+    AltaEspecie:
+      $ref: '#/components/schemas/CamposEspecie'
+      unevaluatedProperties: false
+      required: [id_categoria, slug, nombre_comun, descripcion]
+      examples: [{id_categoria: 2, slug: siete-colores, nombre_comun: Siete colores, descripcion: Ave de humedal.}]
+    EdicionEspecie:
+      $ref: '#/components/schemas/CamposEspecie'
+      unevaluatedProperties: false
+      required: [slug, nombre_comun]
+      examples: [{slug: siete-colores, nombre_comun: Siete colores, id_fuente: null}]
+    EspecieGestion:
+      $ref: '#/components/schemas/CamposEspecie'
+      required: [id_especie, id_categoria, id_fuente, slug, nombre_comun, nombre_cientifico, descripcion, distribucion_geografica, habitat_ecosistema, alimentacion, habito, reproduccion, estado]
+      properties:
+        id_especie: {$ref: '#/components/schemas/IdPositivo'}
+        estado: {$ref: '#/components/schemas/EstadoFicha'}
+      examples:
+        - {id_especie: 7, id_categoria: 2, id_fuente: null, slug: siete-colores, nombre_comun: Siete colores, nombre_cientifico: null, descripcion: Ave de humedal., distribucion_geografica: null, habitat_ecosistema: null, alimentacion: null, habito: null, reproduccion: null, estado: pendiente}
+    CamposLugar:
+      type: object
+      description: Nombre y descripción se recortan antes de validar su longitud.
+      properties:
+        id_comuna: {$ref: '#/components/schemas/IdPositivo'}
+        id_coordenada: {$ref: '#/components/schemas/IdOpcional'}
+        id_fuente: {$ref: '#/components/schemas/IdOpcional'}
+        slug: {$ref: '#/components/schemas/SlugFicha'}
+        nombre: {$ref: '#/components/schemas/NombreFicha'}
+        descripcion: {$ref: '#/components/schemas/TextoFicha'}
+        orden: {$ref: '#/components/schemas/OrdenFicha'}
+    AltaLugar:
+      $ref: '#/components/schemas/CamposLugar'
+      required: [id_comuna, slug, nombre, descripcion]
+      unevaluatedProperties: false
+      properties: {orden: {default: 1}}
+      examples: [{id_comuna: 3, id_coordenada: null, id_fuente: null, slug: mirador, nombre: Mirador, descripcion: Vista del valle.}]
+    EdicionLugar:
+      $ref: '#/components/schemas/CamposLugar'
+      minProperties: 1
+      unevaluatedProperties: false
+      examples: [{orden: 2}]
+    LugarGestion:
+      $ref: '#/components/schemas/CamposLugar'
+      required: [id_lugar, id_comuna, id_coordenada, id_fuente, slug, nombre, descripcion, orden, estado]
+      properties:
+        id_lugar: {$ref: '#/components/schemas/IdPositivo'}
+        estado: {$ref: '#/components/schemas/EstadoFicha'}
+      examples: [{id_lugar: 4, id_comuna: 3, id_coordenada: null, id_fuente: null, slug: mirador, nombre: Mirador, descripcion: Vista del valle., orden: 1, estado: pendiente}]
+    PaginaGestion:
+      type: object
+      required: [items, page, limit, total]
+      properties:
+        page: {$ref: '#/components/schemas/IdPositivo'}
+        limit: {type: integer, minimum: 1, maximum: 100}
+        total: {type: integer, minimum: 0, description: Total que cumple los filtros antes de paginar.}
+    PaginaEspecies:
+      $ref: '#/components/schemas/PaginaGestion'
+      properties: {items: {type: array, items: {$ref: '#/components/schemas/EspecieGestion'}}}
+      examples: [{items: [], page: 1, limit: 20, total: 0}]
+    PaginaLugares:
+      $ref: '#/components/schemas/PaginaGestion'
+      properties: {items: {type: array, items: {$ref: '#/components/schemas/LugarGestion'}}}
+      examples: [{items: [], page: 1, limit: 20, total: 0}]
+    ResumenEspecie:
+      type: object
+      required: [slug, nombre_comun, nombre_cientifico, descripcion, categoria, categoria_slug]
+      properties:
+        slug: {type: string}
+        nombre_comun: {type: string}
+        nombre_cientifico: {type: [string, 'null']}
+        descripcion: {type: string}
+        categoria: {type: string}
+        categoria_slug: {type: string}
+      examples: [{slug: siete-colores, nombre_comun: Siete colores, nombre_cientifico: null, descripcion: Ave de humedal., categoria: Aves, categoria_slug: aves}]
+    ResumenLugar:
+      type: object
+      description: Sin coordenada confirmada, latitud, longitud y url_mapa son null. La consulta devuelve los valores del controlador SQL sin conversión explícita a número.
+      required: [slug, nombre, descripcion, orden, comuna, provincia, region, latitud, longitud, url_mapa]
+      properties:
+        slug: {type: string}
+        nombre: {type: string}
+        descripcion: {type: string}
+        orden: {$ref: '#/components/schemas/OrdenFicha'}
+        comuna: {type: string}
+        provincia: {type: string}
+        region: {type: string}
+        latitud: {type: [string, number, 'null']}
+        longitud: {type: [string, number, 'null']}
+        url_mapa: {type: [string, 'null']}
+      examples: [{slug: mirador, nombre: Mirador, descripcion: Vista del valle., orden: 1, comuna: Comuna de ejemplo, provincia: Provincia de ejemplo, region: Región de ejemplo, latitud: null, longitud: null, url_mapa: null}]
+    FuenteFicha:
+      type: object
+      required: [fuente_titulo, fuente_autor]
+      properties:
+        fuente_titulo: {type: [string, 'null']}
+        fuente_autor: {type: [string, 'null']}
+    DetalleEspecie:
+      allOf: [{$ref: '#/components/schemas/ResumenEspecie'}, {$ref: '#/components/schemas/FuenteFicha'}]
+      required: [distribucion_geografica, habitat_ecosistema, alimentacion, habito, reproduccion, archivos]
+      properties:
+        distribucion_geografica: {type: [string, 'null']}
+        habitat_ecosistema: {type: [string, 'null']}
+        alimentacion: {type: [string, 'null']}
+        habito: {type: [string, 'null']}
+        reproduccion: {type: [string, 'null']}
+        archivos: {type: array, description: Solo autorizados; portada primero y después orden_carrusel ascendente., items: {$ref: '#/components/schemas/ArchivoPublicoEspecie'}}
+      examples:
+        - {slug: siete-colores, nombre_comun: Siete colores, nombre_cientifico: null, descripcion: Ave de humedal., categoria: Aves, categoria_slug: aves, distribucion_geografica: null, habitat_ecosistema: Humedal, alimentacion: null, habito: null, reproduccion: null, fuente_titulo: null, fuente_autor: null, archivos: []}
+    DetalleLugar:
+      allOf: [{$ref: '#/components/schemas/ResumenLugar'}, {$ref: '#/components/schemas/FuenteFicha'}]
+      required: [archivos]
+      properties:
+        archivos: {type: array, description: Solo autorizados; portada primero y después orden_carrusel ascendente., items: {$ref: '#/components/schemas/ArchivoPublicoLugar'}}
+      examples:
+        - {slug: mirador, nombre: Mirador, descripcion: Vista del valle., orden: 1, comuna: Comuna de ejemplo, provincia: Provincia de ejemplo, region: Región de ejemplo, latitud: null, longitud: null, url_mapa: null, fuente_titulo: null, fuente_autor: null, archivos: []}
+    ArchivoPublicoFicha:
+      type: object
+      required: [id_archivo, tipo, titulo, texto_alt, credito, orden_carrusel, url, url_expires_in]
+      properties:
+        id_archivo: {$ref: '#/components/schemas/IdPositivo'}
+        tipo: {type: string, enum: [foto, video, plano, logo]}
+        titulo: {type: string}
+        texto_alt: {type: [string, 'null']}
+        credito: {type: string}
+        orden_carrusel: {$ref: '#/components/schemas/OrdenFicha'}
+        url: {type: string, format: uri, description: URL temporal de descarga firmada; no se expone la ruta de almacenamiento.}
+        url_expires_in: {type: integer, minimum: 1, description: Vigencia en segundos.}
+    ArchivoPublicoEspecie:
+      $ref: '#/components/schemas/ArchivoPublicoFicha'
+      required: [es_portada_ficha]
+      properties: {es_portada_ficha: {type: integer, enum: [0, 1]}}
+      examples: [{id_archivo: 9, tipo: foto, titulo: Ave, texto_alt: Ave en un junco, credito: Museo, orden_carrusel: 0, url: 'https://ejemplo.invalid/descarga', url_expires_in: 300, es_portada_ficha: 1}]
+    ArchivoPublicoLugar:
+      $ref: '#/components/schemas/ArchivoPublicoFicha'
+      required: [es_portada_lugar]
+      properties: {es_portada_lugar: {type: integer, enum: [0, 1]}}
+      examples: [{id_archivo: 9, tipo: foto, titulo: Mirador, texto_alt: Vista desde el mirador, credito: Museo, orden_carrusel: 1, url: 'https://ejemplo.invalid/descarga', url_expires_in: 300, es_portada_lugar: 0}]
+    DatosVinculoEspecie:
+      type: object
+      required: [es_portada_ficha, orden_carrusel]
+      properties: {es_portada_ficha: {type: boolean}, orden_carrusel: {$ref: '#/components/schemas/OrdenFicha'}}
+    DatosVinculoLugar:
+      type: object
+      required: [es_portada_lugar, orden_carrusel]
+      properties: {es_portada_lugar: {type: boolean}, orden_carrusel: {$ref: '#/components/schemas/OrdenFicha'}}
+    VinculoEspecieEntrada:
+      $ref: '#/components/schemas/DatosVinculoEspecie'
+      unevaluatedProperties: false
+      examples: [{es_portada_ficha: true, orden_carrusel: 0}]
+    VinculoLugarEntrada:
+      $ref: '#/components/schemas/DatosVinculoLugar'
+      unevaluatedProperties: false
+      examples: [{es_portada_lugar: false, orden_carrusel: 1}]
+    VinculoEspecie:
+      $ref: '#/components/schemas/DatosVinculoEspecie'
+      required: [id_especie, id_archivo]
+      properties: {id_especie: {$ref: '#/components/schemas/IdPositivo'}, id_archivo: {$ref: '#/components/schemas/IdPositivo'}}
+      examples: [{id_especie: 7, id_archivo: 9, es_portada_ficha: true, orden_carrusel: 0}]
+    VinculoLugar:
+      $ref: '#/components/schemas/DatosVinculoLugar'
+      required: [id_lugar, id_archivo]
+      properties: {id_lugar: {$ref: '#/components/schemas/IdPositivo'}, id_archivo: {$ref: '#/components/schemas/IdPositivo'}}
+      examples: [{id_lugar: 4, id_archivo: 9, es_portada_lugar: false, orden_carrusel: 1}]

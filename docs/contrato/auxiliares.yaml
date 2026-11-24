@@ -1,0 +1,284 @@
+# Fragmento OpenAPI 3.1. Todas las operaciones heredan ApplicationToken del documento raíz.
+paths:
+  /api/v1/categorias:
+    get:
+      operationId: auxiliaresListarCategorias
+      summary: Listar todas las categorías
+      description: Sin paginación ni filtros. Orden ascendente por orden y, en caso de empate, por id_categoria.
+      x-required-scope: catalog:read
+      responses:
+        '200':
+          description: Lista de categorías; vacía si no hay registros.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Categoria'}}
+              example: [{id_categoria: 4, nombre: Aves, slug: aves, orden: 1}]
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    post:
+      operationId: auxiliaresCrearCategoria
+      summary: Crear una categoría
+      description: Si ya existe una categoría con ese nombre o slug, devuelve 409.
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CategoriaAlta'}
+            example: {nombre: Aves, slug: aves, orden: 1}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '201': {$ref: '#/components/responses/CategoriaIndividual'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/categorias/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdCategoria'
+    get:
+      operationId: auxiliaresObtenerCategoria
+      summary: Consultar una categoría por identificador
+      description: A diferencia del listado, el detalle de categoría requiere permiso de escritura.
+      x-required-scope: catalog:write
+      responses:
+        '200': {$ref: '#/components/responses/CategoriaIndividual'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    put:
+      operationId: auxiliaresActualizarCategoria
+      summary: Actualizar uno o más campos de una categoría
+      description: Los campos omitidos se conservan. Un nombre o slug duplicado produce 409.
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CategoriaCambio'}
+            example: {orden: 1}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': {$ref: '#/components/responses/CategoriaIndividual'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound'}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    delete:
+      operationId: auxiliaresEliminarCategoria
+      summary: Eliminar una categoría
+      description: Si tiene especies dependientes, no se elimina y se devuelve 409.
+      x-required-scope: catalog:write
+      responses:
+        '200': {$ref: '#/components/responses/EliminacionAuxiliar'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound'}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/fuentes:
+    get:
+      operationId: auxiliaresListarFuentes
+      summary: Listar todas las fuentes
+      description: Sin paginación ni filtros. Orden ascendente por titulo; no se define un desempate.
+      x-required-scope: catalog:read
+      responses:
+        '200':
+          description: Lista de fuentes; vacía si no hay registros.
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/Fuente'}}
+              example: [{id_fuente: 1, titulo: Fuente institucional, tipo: institucion, autor_institucion: null, url: null, verificada: false}]
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    post:
+      operationId: auxiliaresCrearFuente
+      summary: Crear una fuente
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FuenteAlta'}
+            example: {titulo: Fuente institucional, tipo: institucion, archivo_original: informe.pdf}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '201': {$ref: '#/components/responses/FuenteIndividual'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/fuentes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/IdFuente'
+    get:
+      operationId: auxiliaresObtenerFuente
+      summary: Consultar una fuente por identificador
+      x-required-scope: catalog:read
+      responses:
+        '200': {$ref: '#/components/responses/FuenteIndividual'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    put:
+      operationId: auxiliaresActualizarFuente
+      summary: Actualizar uno o más campos de una fuente
+      description: Los campos omitidos se conservan. Para borrar autor_institucion, archivo_original o url, enviar el campo con valor null.
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/FuenteCambio'}
+            example: {url: null}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': {$ref: '#/components/responses/FuenteIndividual'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    delete:
+      operationId: auxiliaresEliminarFuente
+      summary: Eliminar una fuente
+      description: Si tiene dependencias que impiden el borrado, devuelve 409.
+      x-required-scope: catalog:write
+      responses:
+        '200': {$ref: '#/components/responses/EliminacionAuxiliar'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound'}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+
+components:
+  parameters:
+    IdCategoria:
+      name: id
+      in: path
+      required: true
+      description: Dígitos decimales con valor positivo. Acepta ceros iniciales y no comprueba el límite de entero seguro de JavaScript.
+      schema: {type: string, pattern: '^0*[1-9][0-9]*$'}
+      example: '04'
+    IdFuente:
+      name: id
+      in: path
+      required: true
+      description: Entero decimal positivo sin ceros iniciales. Tras la conversión a número, no debe superar 9007199254740991.
+      schema: {type: string, pattern: '^[1-9][0-9]*$', maxLength: 16}
+      example: '1'
+  responses:
+    CategoriaIndividual:
+      description: Categoría tal como está registrada.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Categoria'}
+          example: {id_categoria: 4, nombre: Aves, slug: aves, orden: 1}
+    FuenteIndividual:
+      description: Fuente registrada. La respuesta nunca incluye archivo_original.
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Fuente'}
+          example: {id_fuente: 1, titulo: Fuente institucional, tipo: institucion, autor_institucion: null, url: null, verificada: false}
+    EliminacionAuxiliar:
+      description: Se eliminó el registro solicitado.
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [deleted]
+            properties:
+              deleted: {type: boolean, const: true}
+          example: {deleted: true}
+  schemas:
+    CategoriaCambio:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        nombre:
+          type: string
+          description: Se eliminan los espacios de los extremos antes de validar la longitud.
+          minLength: 2
+          maxLength: 80
+        slug: {type: string, minLength: 2, maxLength: 90, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'}
+        orden: {type: integer, minimum: 0, maximum: 65535}
+    CategoriaAlta:
+      allOf:
+        - $ref: '#/components/schemas/CategoriaCambio'
+      required: [nombre, slug, orden]
+    Categoria:
+      type: object
+      additionalProperties: false
+      required: [id_categoria, nombre, slug, orden]
+      properties:
+        id_categoria: {type: integer}
+        nombre: {type: string}
+        slug: {type: string}
+        orden: {type: integer}
+    TipoFuente:
+      type: string
+      enum: [ficha, documento, institucion, web, otro]
+    FuenteCambio:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        titulo:
+          type: string
+          description: La longitud se valida después de quitar los espacios de los extremos.
+          minLength: 1
+          maxLength: 255
+        tipo: {$ref: '#/components/schemas/TipoFuente'}
+        autor_institucion:
+          type: [string, 'null']
+          description: Se eliminan los espacios de los extremos; se permite la cadena vacía.
+          maxLength: 200
+        archivo_original:
+          type: [string, 'null']
+          description: Solo de escritura. Si es texto, no puede quedar vacío tras quitar los espacios de los extremos.
+          writeOnly: true
+          minLength: 1
+          maxLength: 500
+        url:
+          type: [string, 'null']
+          format: uri
+          description: URL HTTP o HTTPS validada por z.httpUrl(), o null.
+        verificada: {type: boolean}
+    FuenteAlta:
+      allOf:
+        - $ref: '#/components/schemas/FuenteCambio'
+      required: [titulo, tipo]
+      properties:
+        autor_institucion: {default: null}
+        archivo_original: {default: null}
+        url: {default: null}
+        verificada: {default: false}
+    Fuente:
+      type: object
+      additionalProperties: false
+      required: [id_fuente, titulo, tipo, autor_institucion, url, verificada]
+      properties:
+        id_fuente: {type: integer}
+        titulo: {type: string}
+        tipo: {$ref: '#/components/schemas/TipoFuente'}
+        autor_institucion: {type: [string, 'null']}
+        url: {type: [string, 'null']}
+        verificada: {type: boolean}

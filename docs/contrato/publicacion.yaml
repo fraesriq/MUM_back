@@ -1,0 +1,589 @@
+# Fragmento OAS 3.1. Se hereda ApplicationToken; catalog:write también permite leer.
+components:
+  parameters:
+    IdPublicacion:
+      name: id
+      in: path
+      required: true
+      description: Entero positivo seguro (máximo 9007199254740991), en decimal sin signo ni ceros iniciales.
+      schema: { type: string, pattern: '^[1-9][0-9]*$', maxLength: 16 }
+      example: '7'
+    Pagina:
+      name: page
+      in: query
+      description: Número de página desde 1. Solo dígitos decimales; admite ceros iniciales.
+      schema: { type: integer, minimum: 1, default: 1 }
+    Limite:
+      name: limit
+      in: query
+      description: Máximo de elementos por página. Solo dígitos decimales; admite ceros iniciales.
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Tipo:
+      name: tipo
+      in: query
+      schema: { $ref: '#/components/schemas/TipoArchivo' }
+    Estado:
+      name: estado
+      in: query
+      schema: { $ref: '#/components/schemas/EstadoContenido' }
+    Seccion:
+      name: seccion
+      in: query
+      schema: { $ref: '#/components/schemas/SeccionContenido' }
+
+  responses:
+    CargaProhibida:
+      description: El token carece de alcance (error y message), o el servicio rechaza la aplicación o su autorización de carga (solo message).
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [message]
+            properties:
+              message: { type: string }
+              error: { const: insufficient_scope }
+    ArchivoGestion:
+      description: Archivo de gestión con los metadatos almacenados.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ArchivoGestion' }
+    Contenido:
+      description: Fila de contenido con su estado actual.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Contenido' }
+    PaginaContenidos:
+      description: Contenidos de la página y recuento total tras aplicar los filtros efectivos.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/PaginaPublicacion'
+            properties:
+              items: { type: array, items: { $ref: '#/components/schemas/Contenido' } }
+    EliminacionPublicacion:
+      description: Eliminación completada.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [deleted]
+            properties:
+              deleted: { const: true }
+            examples: [{ deleted: true }]
+
+  schemas:
+    PaginaPublicacion:
+      type: object
+      required: [items, total, page, limit]
+      properties:
+        items: { type: array }
+        total: { type: integer, minimum: 0, description: Total de filas coincidentes en todas las páginas. }
+        page: { type: integer, minimum: 1 }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+      examples: [{ items: [], total: 0, page: 1, limit: 20 }]
+    TipoArchivo:
+      type: string
+      enum: [foto, video, plano, logo]
+    PermisoArchivo:
+      type: string
+      enum: [pendiente, autorizado, rechazado]
+    EstadoContenido:
+      type: string
+      enum: [pendiente, aprobado, rechazado]
+    SeccionContenido:
+      type: string
+      enum: [inicio, proyecto, historia, visitantes, creditos, aplicacion]
+    FuenteEntrada:
+      type: [integer, 'null']
+      minimum: 1
+      description: Identificador positivo o null para no asociar fuente. El servicio no comprueba que la fuente exista antes de escribir.
+    Texto200:
+      type: string
+      minLength: 1
+      maxLength: 200
+      description: Longitud después de quitar espacios en los extremos.
+    ClaveCarga:
+      type: string
+      description: Clave devuelta al solicitar la carga; directorio y extensión deben corresponder al tipo y al MIME. JPEG usa jpg.
+      pattern: '^archivos/(foto|video|plano|logo)/[0-9]{4}/(0[1-9]|1[0-2])/[0-9a-f-]{36}\.(jpg|png|webp|avif|mp4|webm|pdf)$'
+      examples: [archivos/foto/2026/11/00000000-0000-4000-8000-000000000001.webp]
+    DatosCarga:
+      type: object
+      required: [tipo, content_type, tamanio_bytes]
+      properties:
+        tipo: { $ref: '#/components/schemas/TipoArchivo' }
+        content_type:
+          type: string
+          description: MIME tras recortar espacios exteriores; debe coincidir con el tipo de archivo.
+        tamanio_bytes:
+          type: integer
+          minimum: 1
+          description: No puede superar el máximo configurado en el despliegue (10485760 bytes por defecto).
+      oneOf:
+        - properties:
+            tipo: { enum: [foto, logo] }
+            content_type: { enum: [image/jpeg, image/png, image/webp, image/avif] }
+        - properties:
+            tipo: { const: video }
+            content_type: { enum: [video/mp4, video/webm] }
+        - properties:
+            tipo: { const: plano }
+            content_type: { enum: [application/pdf, image/jpeg, image/png, image/webp] }
+    SolicitudCarga:
+      $ref: '#/components/schemas/DatosCarga'
+      unevaluatedProperties: false
+      examples: [{ tipo: foto, content_type: image/webp, tamanio_bytes: 2048 }]
+    AutorizacionCarga:
+      type: object
+      required: [object_key, upload_url, expires_in, required_headers, signed_headers, expected_size_bytes]
+      properties:
+        object_key: { $ref: '#/components/schemas/ClaveCarga' }
+        upload_url: { type: string, description: URL temporal para PUT; no conservar ni compartir. }
+        expires_in: { type: integer, minimum: 1, maximum: 604800, description: Vigencia en segundos (normalmente 300). }
+        required_headers:
+          type: object
+          required: [Content-Type]
+          properties:
+            Content-Type: { type: string, description: El mismo MIME de la solicitud. }
+        signed_headers: { const: [content-type, content-length] }
+        expected_size_bytes: { type: integer, minimum: 1, description: Tamaño exacto solicitado. }
+    CamposArchivo:
+      type: object
+      properties:
+        id_fuente: { $ref: '#/components/schemas/FuenteEntrada' }
+        titulo: { $ref: '#/components/schemas/Texto200' }
+        texto_alt:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 500
+          description: Si es texto, se recortan los extremos antes de comprobar la longitud.
+        credito: { $ref: '#/components/schemas/Texto200' }
+        permiso: { $ref: '#/components/schemas/PermisoArchivo' }
+        en_galeria_general: { type: boolean }
+        orden_galeria: { type: [integer, 'null'], minimum: 0, maximum: 65535 }
+    ConfirmacionCarga:
+      allOf:
+        - { $ref: '#/components/schemas/DatosCarga' }
+        - { $ref: '#/components/schemas/CamposArchivo' }
+      required: [object_key, titulo, credito]
+      properties:
+        object_key: { $ref: '#/components/schemas/ClaveCarga' }
+        permiso: { default: pendiente }
+        en_galeria_general: { default: false }
+      if:
+        properties:
+          tipo: { enum: [foto, logo, plano] }
+      then:
+        required: [texto_alt]
+        properties:
+          texto_alt: { type: string }
+      unevaluatedProperties: false
+      examples:
+        - object_key: archivos/foto/2026/11/00000000-0000-4000-8000-000000000001.webp
+          tipo: foto
+          content_type: image/webp
+          tamanio_bytes: 2048
+          titulo: Sala principal
+          texto_alt: Vista de la sala principal del museo
+          credito: Museo
+    ArchivoComun:
+      type: object
+      required: [id_archivo, tipo, titulo, texto_alt, credito, orden_galeria]
+      properties:
+        id_archivo: { type: integer }
+        tipo: { $ref: '#/components/schemas/TipoArchivo' }
+        titulo: { type: string }
+        texto_alt: { type: [string, 'null'] }
+        credito: { type: string }
+        orden_galeria: { type: [integer, 'null'] }
+    ArchivoGestion:
+      $ref: '#/components/schemas/ArchivoComun'
+      required: [id_fuente, ruta, permiso, en_galeria_general]
+      properties:
+        id_fuente: { type: [integer, 'null'] }
+        ruta: { type: string, description: Clave de almacenamiento; no es una URL de lectura. }
+        permiso: { $ref: '#/components/schemas/PermisoArchivo' }
+        en_galeria_general: { type: integer, description: Valor numérico almacenado; 1 habilita la galería. }
+      unevaluatedProperties: false
+      examples:
+        - id_archivo: 7
+          id_fuente: null
+          tipo: foto
+          titulo: Sala principal
+          ruta: archivos/foto/2026/11/00000000-0000-4000-8000-000000000001.webp
+          texto_alt: Vista de la sala principal del museo
+          credito: Museo
+          permiso: pendiente
+          en_galeria_general: 0
+          orden_galeria: null
+    ArchivoGaleria:
+      $ref: '#/components/schemas/ArchivoComun'
+      required: [url, url_expires_in]
+      properties:
+        url: { type: string, description: Acceso GET temporal; no conservar ni compartir. }
+        url_expires_in: { type: integer, minimum: 1, maximum: 604800, description: Vigencia en segundos (normalmente 3600). }
+      unevaluatedProperties: false
+    CamposContenido:
+      type: object
+      additionalProperties: false
+      properties:
+        id_fuente: { $ref: '#/components/schemas/FuenteEntrada' }
+        seccion: { $ref: '#/components/schemas/SeccionContenido' }
+        titulo: { $ref: '#/components/schemas/Texto200' }
+        texto: { type: string, minLength: 1, description: No vacío después de recortar espacios exteriores. }
+        orden: { type: integer, minimum: 0, maximum: 65535 }
+        estado: { $ref: '#/components/schemas/EstadoContenido' }
+    Contenido:
+      type: object
+      required: [id_contenido, id_fuente, seccion, titulo, texto, orden, estado]
+      properties:
+        id_contenido: { type: integer }
+        id_fuente: { type: [integer, 'null'] }
+        seccion: { $ref: '#/components/schemas/SeccionContenido' }
+        titulo: { type: string }
+        texto: { type: string }
+        orden: { type: integer }
+        estado: { $ref: '#/components/schemas/EstadoContenido' }
+      examples:
+        - { id_contenido: 3, id_fuente: null, seccion: inicio, titulo: Bienvenida, texto: Conozca el museo., orden: 1, estado: aprobado }
+
+paths:
+  /api/v1/archivos/cargas:
+    post:
+      operationId: publicacionSolicitarCarga
+      summary: Solicitar una carga directa a R2
+      description: La autorización pertenece a la aplicación solicitante. Use PUT en R2 con el Content-Type devuelto y el número exacto de bytes; el navegador calcula Content-Length. Después confirme la carga en la API.
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SolicitudCarga' }
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '201':
+          description: Autorización temporal; todavía no existe una fila de archivo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AutorizacionCarga' }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/CargaProhibida' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+
+  /api/v1/archivos/cargas/confirmar:
+    post:
+      operationId: publicacionConfirmarCarga
+      summary: Confirmar el objeto y registrar sus metadatos
+      description: >-
+        Envíe la clave entregada a la misma aplicación, con idénticos tipo, MIME y tamaño.
+        La API comprueba la autorización y contrasta MIME y bytes con el objeto en R2.
+        Una repetición compatible devuelve la fila confirmada con 201, sin duplicarla ni modificar sus metadatos.
+        Una autorización ausente, ajena, no coincidente o ya vencida en la comprobación inicial da 403;
+        el vencimiento durante la confirmación, una referencia inconsistente o un fallo compensado al registrar dan 409.
+        Si no se puede mantener la tarea de limpieza, el cliente recibe 500.
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfirmacionCarga' }
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '201': { $ref: '#/components/responses/ArchivoGestion' }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/CargaProhibida' }
+        '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+
+  /api/v1/archivos/limpieza:
+    post:
+      operationId: publicacionProcesarLimpieza
+      summary: Reintentar la eliminación de objetos sin referencia
+      description: Procesa tareas por updated_at ascendente. Omite objetos con fila de archivo o con una autorización sin confirmar aún vigente. Los fallos registrados quedan pendientes para otro intento.
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                limit: { type: integer, minimum: 1, maximum: 100, default: 20 }
+              examples: [{}]
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200':
+          description: Número de tareas procesadas, eliminaciones completadas y fallos registrados.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [processed, deleted, failed]
+                properties:
+                  processed: { type: integer, minimum: 0 }
+                  deleted: { type: integer, minimum: 0 }
+                  failed: { type: integer, minimum: 0 }
+                examples: [{ processed: 3, deleted: 2, failed: 1 }]
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+
+  /api/v1/archivos:
+    get:
+      operationId: publicacionListarArchivos
+      summary: Listar archivos de gestión, incluidos los no publicados
+      description: Orden por id_archivo ascendente. Solo se admiten los parámetros indicados.
+      x-required-scope: catalog:write
+      parameters:
+        - { $ref: '#/components/parameters/Tipo' }
+        - { $ref: '#/components/parameters/Pagina' }
+        - { $ref: '#/components/parameters/Limite' }
+      responses:
+        '200':
+          description: Página de archivos con su clave de almacenamiento.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaPublicacion'
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/ArchivoGestion' } }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+
+  /api/v1/archivos/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/IdPublicacion' }
+    get:
+      operationId: publicacionObtenerArchivo
+      summary: Consultar un archivo de gestión
+      x-required-scope: catalog:write
+      responses:
+        '200': { $ref: '#/components/responses/ArchivoGestion' }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+    put:
+      operationId: publicacionActualizarArchivo
+      summary: Actualizar solo los metadatos enviados
+      description: Se valida el resultado combinado con la fila existente. No se puede cambiar tipo ni ruta; un archivo distinto de video no puede quedar sin texto alternativo.
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CamposArchivo'
+              minProperties: 1
+              unevaluatedProperties: false
+              examples: [{ permiso: autorizado, en_galeria_general: true }]
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': { $ref: '#/components/responses/ArchivoGestion' }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+    delete:
+      operationId: publicacionEliminarArchivo
+      summary: Eliminar la referencia y después el objeto en R2
+      description: Un 409 indica que la referencia ya se eliminó y el objeto quedó pendiente de limpieza. Un fallo al actualizar o cerrar la tarea se expone como 500.
+      x-required-scope: catalog:write
+      responses:
+        '200': { $ref: '#/components/responses/EliminacionPublicacion' }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+        '409': { $ref: '../openapi.yaml#/components/responses/Conflict' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+
+  /api/v1/galeria:
+    get:
+      operationId: publicacionListarGaleria
+      summary: Listar los archivos visibles en la galería general
+      description: Solo permiso autorizado y en_galeria_general igual a 1. Orden por orden_galeria ascendente (nulos primero) y luego id_archivo ascendente. No admite otros parámetros.
+      x-required-scope: catalog:read
+      parameters:
+        - { $ref: '#/components/parameters/Tipo' }
+        - { $ref: '#/components/parameters/Pagina' }
+        - { $ref: '#/components/parameters/Limite' }
+      responses:
+        '200':
+          description: Página de archivos visibles con acceso temporal de lectura.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginaPublicacion'
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/ArchivoGaleria' } }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+
+  /api/v1/galeria/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/IdPublicacion' }
+    get:
+      operationId: publicacionObtenerGaleria
+      summary: Obtener un archivo visible y su acceso temporal
+      description: Devuelve 404 tanto si el archivo no existe como si no está autorizado o no pertenece a la galería general.
+      x-required-scope: catalog:read
+      responses:
+        '200':
+          description: Proyección pública sin clave de almacenamiento ni metadatos de gestión.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ArchivoGaleria' }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+
+  /api/v1/contenidos/aprobados:
+    get:
+      operationId: publicacionListarAprobados
+      summary: Leer contenidos aprobados por orden de presentación
+      description: Orden por orden ascendente y luego id_contenido ascendente. La API valida estado si se envía, pero lo ignora al consultar; solo devuelve aprobados. Rechaza parámetros desconocidos.
+      x-required-scope: catalog:read
+      parameters:
+        - { $ref: '#/components/parameters/Seccion' }
+        - { $ref: '#/components/parameters/Estado' }
+        - { $ref: '#/components/parameters/Pagina' }
+        - { $ref: '#/components/parameters/Limite' }
+      responses:
+        '200': { $ref: '#/components/responses/PaginaContenidos' }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+
+  /api/v1/contenidos:
+    get:
+      operationId: publicacionListarContenidos
+      summary: Consultar contenidos de gestión por estado y sección
+      description: Combina los filtros enviados. Orden por orden ascendente y luego id_contenido ascendente. Rechaza parámetros desconocidos.
+      x-required-scope: catalog:write
+      parameters:
+        - { $ref: '#/components/parameters/Estado' }
+        - { $ref: '#/components/parameters/Seccion' }
+        - { $ref: '#/components/parameters/Pagina' }
+        - { $ref: '#/components/parameters/Limite' }
+      responses:
+        '200': { $ref: '#/components/responses/PaginaContenidos' }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+    post:
+      operationId: publicacionCrearContenido
+      summary: Crear contenido en la sección indicada
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CamposContenido'
+              required: [seccion, titulo, texto, orden]
+              properties:
+                estado: { default: pendiente }
+              examples: [{ seccion: inicio, titulo: Bienvenida, texto: Conozca el museo., orden: 1 }]
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '201': { $ref: '#/components/responses/Contenido' }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+
+  /api/v1/contenidos/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/IdPublicacion' }
+    get:
+      operationId: publicacionObtenerContenido
+      summary: Leer contenido de gestión sin filtrar su estado
+      x-required-scope: catalog:write
+      responses:
+        '200': { $ref: '#/components/responses/Contenido' }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+    put:
+      operationId: publicacionActualizarContenido
+      summary: Actualizar solo los campos enviados, incluido el estado
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CamposContenido'
+              minProperties: 1
+              examples: [{ orden: 2 }]
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': { $ref: '#/components/responses/Contenido' }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+    delete:
+      operationId: publicacionEliminarContenido
+      summary: Eliminar un contenido por identificador
+      x-required-scope: catalog:write
+      responses:
+        '200': { $ref: '#/components/responses/EliminacionPublicacion' }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }
+
+  /api/v1/contenidos/{id}/aprobar:
+    parameters:
+      - { $ref: '#/components/parameters/IdPublicacion' }
+    patch:
+      operationId: publicacionResolverContenido
+      summary: Aprobar o rechazar un contenido existente
+      description: No exige un estado anterior concreto.
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [estado]
+              properties:
+                estado: { type: string, enum: [aprobado, rechazado] }
+              examples: [{ estado: aprobado }]
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': { $ref: '#/components/responses/Contenido' }
+        '400': { $ref: '../openapi.yaml#/components/responses/InvalidInput' }
+        '401': { $ref: '../openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../openapi.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../openapi.yaml#/components/responses/NotFound' }
+        '500': { $ref: '../openapi.yaml#/components/responses/InternalError' }

@@ -1,0 +1,435 @@
+# Fragmento OpenAPI 3.1. Todas las operaciones heredan ApplicationToken.
+paths:
+  /api/v1/regiones:
+    get:
+      operationId: territorioListarRegiones
+      summary: Listar regiones por nombre ascendente, sin paginación
+      x-required-scope: catalog:read
+      responses:
+        '200': {description: Lista de regiones (puede estar vacía)., content: {application/json: {schema: {$ref: '#/components/schemas/ListaRegiones'}}}}
+        '400': {$ref: '../openapi.yaml#/components/responses/BadRequest'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    post:
+      operationId: territorioCrearRegion
+      summary: Crear una región
+      x-required-scope: catalog:write
+      requestBody: {$ref: '#/components/requestBodies/EscribirRegion'}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '201':
+          description: Región creada; si desaparece entre la inserción y la relectura, el cuerpo es null.
+          content: {application/json: {schema: {oneOf: [{$ref: '#/components/schemas/Region'}, {type: 'null'}]}}}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: Ya existe una región con ese nombre.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/regiones/{id}:
+    parameters: [{$ref: '#/components/parameters/IdTerritorial'}]
+    get:
+      operationId: territorioObtenerRegion
+      summary: Consultar el detalle de una región
+      x-required-scope: catalog:write
+      responses:
+        '200': {$ref: '#/components/responses/Region'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Región no encontrada}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    put:
+      operationId: territorioActualizarRegion
+      summary: Cambiar el nombre de una región
+      x-required-scope: catalog:write
+      requestBody: {$ref: '#/components/requestBodies/EscribirRegion'}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': {$ref: '#/components/responses/Region'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Región no encontrada}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: Ya existe una región con ese nombre.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    delete:
+      operationId: territorioEliminarRegion
+      summary: Eliminar una región sin provincias dependientes
+      x-required-scope: catalog:write
+      responses:
+        '200': {$ref: '#/components/responses/BajaTerritorial'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Región no encontrada}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: No se puede eliminar la región porque tiene provincias dependientes.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/regiones/{id}/provincias:
+    parameters: [{$ref: '#/components/parameters/IdTerritorial'}]
+    get:
+      operationId: territorioListarProvinciasDeRegion
+      summary: Listar las provincias de una región por nombre ascendente
+      x-required-scope: catalog:read
+      responses:
+        '200': {description: Lista sin paginación; vacía si la región existe y no tiene provincias., content: {application/json: {schema: {$ref: '#/components/schemas/ListaProvincias'}}}}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Región no encontrada}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/provincias:
+    post:
+      operationId: territorioCrearProvincia
+      summary: Crear una provincia en una región existente
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AltaProvincia'}}}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '201':
+          description: Provincia creada; si desaparece entre la inserción y la relectura, el cuerpo es null.
+          content: {application/json: {schema: {oneOf: [{$ref: '#/components/schemas/Provincia'}, {type: 'null'}]}}}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: Nombre duplicado o región indicada inexistente.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/provincias/{id}:
+    parameters: [{$ref: '#/components/parameters/IdTerritorial'}]
+    get:
+      operationId: territorioObtenerProvincia
+      summary: Consultar el detalle de una provincia
+      x-required-scope: catalog:write
+      responses:
+        '200': {$ref: '#/components/responses/Provincia'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Provincia no encontrada}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    put:
+      operationId: territorioActualizarProvincia
+      summary: Cambiar el nombre o la región de una provincia
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CambioProvincia'}}}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': {$ref: '#/components/responses/Provincia'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Provincia no encontrada}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: Nombre duplicado o región indicada inexistente.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    delete:
+      operationId: territorioEliminarProvincia
+      summary: Eliminar una provincia sin comunas dependientes
+      x-required-scope: catalog:write
+      responses:
+        '200': {$ref: '#/components/responses/BajaTerritorial'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Provincia no encontrada}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: No se puede eliminar la provincia porque tiene comunas dependientes.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/provincias/{id}/comunas:
+    parameters: [{$ref: '#/components/parameters/IdTerritorial'}]
+    get:
+      operationId: territorioListarComunasDeProvincia
+      summary: Listar las comunas de una provincia por nombre ascendente
+      x-required-scope: catalog:read
+      responses:
+        '200': {description: Lista sin paginación; vacía si la provincia existe y no tiene comunas., content: {application/json: {schema: {$ref: '#/components/schemas/ListaComunas'}}}}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Provincia no encontrada}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/comunas:
+    post:
+      operationId: territorioCrearComuna
+      summary: Crear una comuna en una provincia existente
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AltaComuna'}}}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '201':
+          description: Comuna creada; si desaparece entre la inserción y la relectura, el cuerpo es null.
+          content: {application/json: {schema: {oneOf: [{$ref: '#/components/schemas/Comuna'}, {type: 'null'}]}}}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: Nombre duplicado o provincia indicada inexistente.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/comunas/{id}:
+    parameters: [{$ref: '#/components/parameters/IdTerritorial'}]
+    get:
+      operationId: territorioObtenerComuna
+      summary: Consultar el detalle de una comuna
+      x-required-scope: catalog:write
+      responses:
+        '200': {$ref: '#/components/responses/Comuna'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Comuna no encontrada}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    put:
+      operationId: territorioActualizarComuna
+      summary: Cambiar el nombre o la provincia de una comuna
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CambioComuna'}}}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': {$ref: '#/components/responses/Comuna'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Comuna no encontrada}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: Nombre duplicado o provincia indicada inexistente.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    delete:
+      operationId: territorioEliminarComuna
+      summary: Eliminar una comuna sin lugares dependientes
+      x-required-scope: catalog:write
+      responses:
+        '200': {$ref: '#/components/responses/BajaTerritorial'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Comuna no encontrada}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: No se puede eliminar la comuna porque tiene lugares dependientes.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/coordenadas:
+    get:
+      operationId: territorioListarCoordenadas
+      summary: Listar coordenadas por id_coordenada ascendente
+      description: Incluye las no confirmadas. Solo se admiten page y limit, como enteros decimales positivos sin signo ni ceros iniciales.
+      x-required-scope: catalog:write
+      parameters:
+        - {in: query, name: page, description: Número de página desde 1., schema: {type: integer, minimum: 1, maximum: 9007199254740991, default: 1}}
+        - {in: query, name: limit, description: Máximo de coordenadas por página., schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+      responses:
+        '200': {description: Página solicitada; items puede estar vacío., content: {application/json: {schema: {$ref: '#/components/schemas/PaginaCoordenadas'}}}}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    post:
+      operationId: territorioCrearCoordenada
+      summary: Registrar una coordenada
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/AltaCoordenada'}}}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '201': {$ref: '#/components/responses/Coordenada'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+  /api/v1/coordenadas/{id}:
+    parameters: [{$ref: '#/components/parameters/IdTerritorial'}]
+    get:
+      operationId: territorioObtenerCoordenada
+      summary: Consultar el detalle de una coordenada
+      x-required-scope: catalog:write
+      responses:
+        '200': {$ref: '#/components/responses/Coordenada'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Coordenada no encontrada}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    put:
+      operationId: territorioActualizarCoordenada
+      summary: Actualizar solo los campos enviados de una coordenada
+      x-required-scope: catalog:write
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CambioCoordenada'}}}
+      responses:
+        '413': {$ref: '../openapi.yaml#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '../openapi.yaml#/components/responses/CodificacionNoAdmitida'}
+        '200': {$ref: '#/components/responses/Coordenada'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Coordenada no encontrada}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+    delete:
+      operationId: territorioEliminarCoordenada
+      summary: Eliminar una coordenada
+      x-required-scope: catalog:write
+      responses:
+        '200': {$ref: '#/components/responses/BajaTerritorial'}
+        '400': {$ref: '../openapi.yaml#/components/responses/InvalidInput'}
+        '401': {$ref: '../openapi.yaml#/components/responses/Unauthorized'}
+        '403': {$ref: '../openapi.yaml#/components/responses/Forbidden'}
+        '404': {$ref: '../openapi.yaml#/components/responses/NotFound', description: Coordenada no encontrada}
+        '409': {$ref: '../openapi.yaml#/components/responses/Conflict', description: No se puede eliminar la coordenada porque tiene dependencias.}
+        '500': {$ref: '../openapi.yaml#/components/responses/InternalError'}
+
+components:
+  parameters:
+    IdTerritorial:
+      name: id
+      in: path
+      required: true
+      description: Identificador del recurso anterior a este segmento. Solo dígitos decimales, sin signo ni ceros iniciales.
+      schema: {$ref: '#/components/schemas/EnteroTerritorial'}
+      example: 1
+  requestBodies:
+    EscribirRegion:
+      required: true
+      content:
+        application/json: {schema: {$ref: '#/components/schemas/EscrituraRegion'}}
+  responses:
+    Region:
+      description: Región registrada.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Region'}}}
+    Provincia:
+      description: Provincia registrada con su región.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Provincia'}}}
+    Comuna:
+      description: Comuna registrada con su provincia.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Comuna'}}}
+    Coordenada:
+      description: Coordenada registrada con latitud y longitud numéricas y confirmación booleana.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Coordenada'}}}
+    BajaTerritorial:
+      description: Recurso eliminado.
+      content: {application/json: {schema: {$ref: '#/components/schemas/BajaTerritorial'}}}
+  schemas:
+    EnteroTerritorial: {type: integer, minimum: 1, maximum: 9007199254740991}
+    NombreTerritorial:
+      type: string
+      description: Se eliminan los espacios extremos antes de validar la longitud y guardar el nombre.
+      minLength: 2
+      maxLength: 100
+    EscrituraRegion:
+      type: object
+      additionalProperties: false
+      required: [nombre]
+      properties:
+        nombre: {$ref: '#/components/schemas/NombreTerritorial'}
+      examples: [{nombre: Norte}]
+    CambioProvincia:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        id_region: {$ref: '#/components/schemas/EnteroTerritorial'}
+        nombre: {$ref: '#/components/schemas/NombreTerritorial'}
+      examples: [{id_region: 2}]
+    AltaProvincia:
+      $ref: '#/components/schemas/CambioProvincia'
+      required: [id_region, nombre]
+      examples: [{id_region: 1, nombre: Costa}]
+    CambioComuna:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        id_provincia: {$ref: '#/components/schemas/EnteroTerritorial'}
+        nombre: {$ref: '#/components/schemas/NombreTerritorial'}
+      examples: [{nombre: Puerto Sur}]
+    AltaComuna:
+      $ref: '#/components/schemas/CambioComuna'
+      required: [id_provincia, nombre]
+      examples: [{id_provincia: 4, nombre: Puerto}]
+    Region:
+      type: object
+      required: [id_region, nombre]
+      properties:
+        id_region: {$ref: '#/components/schemas/EnteroTerritorial'}
+        nombre: {type: string}
+      examples: [{id_region: 1, nombre: Norte}]
+    Provincia:
+      type: object
+      required: [id_provincia, id_region, nombre]
+      properties:
+        id_provincia: {$ref: '#/components/schemas/EnteroTerritorial'}
+        id_region: {$ref: '#/components/schemas/EnteroTerritorial'}
+        nombre: {type: string}
+      examples: [{id_provincia: 4, id_region: 1, nombre: Costa}]
+    Comuna:
+      type: object
+      required: [id_comuna, id_provincia, nombre]
+      properties:
+        id_comuna: {$ref: '#/components/schemas/EnteroTerritorial'}
+        id_provincia: {$ref: '#/components/schemas/EnteroTerritorial'}
+        nombre: {type: string}
+      examples: [{id_comuna: 7, id_provincia: 4, nombre: Puerto}]
+    ListaRegiones: {type: array, items: {$ref: '#/components/schemas/Region'}, examples: [[{id_region: 1, nombre: Norte}]]}
+    ListaProvincias: {type: array, items: {$ref: '#/components/schemas/Provincia'}, examples: [[{id_provincia: 4, id_region: 1, nombre: Costa}]]}
+    ListaComunas: {type: array, items: {$ref: '#/components/schemas/Comuna'}, examples: [[{id_comuna: 7, id_provincia: 4, nombre: Puerto}]]}
+    Latitud: {type: number, minimum: -90, maximum: 90, multipleOf: 0.0000001}
+    Longitud: {type: number, minimum: -180, maximum: 180, multipleOf: 0.0000001}
+    UrlMapa:
+      type: [string, 'null']
+      format: uri
+      pattern: '^[Hh][Tt][Tt][Pp][Ss]?://'
+      maxLength: 1024
+      description: URL HTTP o HTTPS sin espacios extremos tras la normalización. En PUT, null borra el enlace; omitirlo lo conserva.
+    AltaCoordenada:
+      type: object
+      additionalProperties: false
+      required: [latitud, longitud]
+      properties:
+        latitud: {$ref: '#/components/schemas/Latitud'}
+        longitud: {$ref: '#/components/schemas/Longitud'}
+        url_mapa: {$ref: '#/components/schemas/UrlMapa', default: null}
+        confirmada: {type: boolean, default: false}
+      examples: [{latitud: -33.456789, longitud: -70.654321}]
+    CambioCoordenada:
+      type: object
+      minProperties: 1
+      additionalProperties: false
+      properties:
+        latitud: {$ref: '#/components/schemas/Latitud'}
+        longitud: {$ref: '#/components/schemas/Longitud'}
+        url_mapa: {$ref: '#/components/schemas/UrlMapa'}
+        confirmada: {type: boolean}
+      examples: [{url_mapa: null, confirmada: true}]
+    Coordenada:
+      type: object
+      required: [id_coordenada, latitud, longitud, url_mapa, confirmada]
+      properties:
+        id_coordenada: {$ref: '#/components/schemas/EnteroTerritorial'}
+        latitud: {type: number}
+        longitud: {type: number}
+        url_mapa: {type: [string, 'null']}
+        confirmada: {type: boolean}
+      examples: [{id_coordenada: 1, latitud: -33.456789, longitud: -70.654321, url_mapa: null, confirmada: false}]
+    PaginaCoordenadas:
+      type: object
+      required: [items, total, page, limit]
+      properties:
+        items: {type: array, items: {$ref: '#/components/schemas/Coordenada'}}
+        total: {type: integer, minimum: 0, description: Total de coordenadas antes de paginar.}
+        page: {$ref: '#/components/schemas/EnteroTerritorial'}
+        limit: {type: integer, minimum: 1, maximum: 100}
+      examples: [{items: [], total: 0, page: 1, limit: 20}]
+    BajaTerritorial:
+      type: object
+      required: [deleted]
+      properties: {deleted: {type: boolean, const: true}}
+      examples: [{deleted: true}]

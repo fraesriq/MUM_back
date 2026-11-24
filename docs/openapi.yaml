@@ -1,0 +1,201 @@
+openapi: 3.1.0
+info:
+  title: API de catálogo MUM
+  version: 'v1'
+  description: |
+    Contrato AS-IS de consulta y gestión del catálogo, publicación de contenidos y archivos.
+    El prefijo /api/v1 identifica la versión del catálogo; salud y emisión de tokens no llevan prefijo.
+    La URL se resuelve contra el origen del ambiente facilitado por el operador. No se presupone un host de producción.
+    Las credenciales identifican aplicaciones, no usuarios. El ámbito mínimo se indica en x-required-scope;
+    catalog:write también permite las lecturas catalog:read. Incluso las vistas llamadas públicas requieren token.
+    Los ejemplos ilustran formas de datos y no identifican registros reales.
+    Antes del enrutamiento, Express analiza JSON y formularios. Un cuerpo mal formado, excesivo o con una codificación
+    no admitida puede producir 400, 413 o 415 con solo message, incluso antes de la autenticación.
+    No envíe cuerpos en las operaciones que no definen requestBody.
+    Distribuir este archivo junto con el subdirectorio contrato/ conservando sus rutas relativas.
+servers:
+  - url: /
+    description: Raíz HTTP del backend en el ambiente seleccionado
+security:
+  - ApplicationToken: []
+paths:
+  /health/live:
+    get:
+      operationId: comprobarProceso
+      summary: Comprobar que el proceso responde sin consultar la base de datos
+      security: []
+      responses:
+        '200':
+          description: Proceso en ejecución
+          content:
+            application/json:
+              schema: {type: object, required: [status], properties: {status: {type: string, const: live}}}
+              example: {status: live}
+  /health:
+    get:
+      operationId: comprobarBaseDatos
+      summary: Comprobar disponibilidad de la base de datos
+      security: []
+      responses:
+        '200':
+          description: La comprobación de base de datos tuvo éxito
+          content:
+            application/json:
+              schema: {type: object, required: [status, database], properties: {status: {type: string, const: ok}, database: {type: string, const: ready}}}
+              example: {status: ok, database: ready}
+        '503':
+          description: No se pudo completar la consulta de disponibilidad
+          content:
+            application/json:
+              schema: {type: object, required: [status, database], properties: {status: {type: string, const: degraded}, database: {type: string, const: unavailable}}}
+              example: {status: degraded, database: unavailable}
+  /oauth/token:
+    post:
+      operationId: emitirTokenAplicacion
+      summary: Obtener un token de aplicación con credenciales de cliente
+      description: |
+        Autenticar el cliente mediante HTTP Basic. El limitador por dirección de cliente cuenta solicitudes,
+        incluidas las fallidas, con un límite de 20 en 60 segundos. No se emite refresh_token.
+      security: [{ClientBasic: []}]
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema: {$ref: '#/components/schemas/SolicitudToken'}
+            example: {grant_type: client_credentials, scope: 'catalog:read'}
+          application/json:
+            schema: {$ref: '#/components/schemas/SolicitudToken'}
+      responses:
+        '200':
+          description: Token para enviar sin prefijo en X-Application-Token
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [access_token, token_type, expires_in, scope]
+                properties:
+                  access_token: {type: string, description: JWT de corta duración}
+                  token_type: {type: string, const: Bearer}
+                  expires_in: {type: integer, const: 900, description: Segundos}
+                  scope: {type: string, description: Ámbitos concedidos separados por espacios}
+        '400':
+          description: invalid_request, unsupported_grant_type o invalid_scope; un error del analizador de cuerpo puede devolver solo message.
+          content:
+            application/json:
+              schema: {oneOf: [{$ref: '#/components/schemas/ErrorOAuth'}, {$ref: '#/components/schemas/Mensaje'}]}
+              example: {error: invalid_scope, error_description: El ámbito solicitado no es válido o no está autorizado.}
+        '401':
+          description: invalid_client (credenciales ausentes, no válidas o cliente no habilitado)
+          headers:
+            WWW-Authenticate: {schema: {type: string, const: 'Basic realm="oauth"'}}
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorOAuth'}}}
+        '413': {$ref: '#/components/responses/CuerpoExcesivo'}
+        '415': {$ref: '#/components/responses/CodificacionNoAdmitida'}
+        '429':
+          description: temporarily_unavailable (se alcanzó el límite de emisión)
+          headers:
+            Retry-After: {schema: {type: integer}, description: Segundos antes de volver a intentar}
+          content: {application/json: {schema: {$ref: '#/components/schemas/ErrorOAuth'}}}
+        '500': {$ref: '#/components/responses/InternalError'}
+  /api/v1/categorias: {$ref: 'contrato/auxiliares.yaml#/paths/~1api~1v1~1categorias'}
+  /api/v1/categorias/{id}: {$ref: 'contrato/auxiliares.yaml#/paths/~1api~1v1~1categorias~1%7Bid%7D'}
+  /api/v1/fuentes: {$ref: 'contrato/auxiliares.yaml#/paths/~1api~1v1~1fuentes'}
+  /api/v1/fuentes/{id}: {$ref: 'contrato/auxiliares.yaml#/paths/~1api~1v1~1fuentes~1%7Bid%7D'}
+  /api/v1/especies: {$ref: 'contrato/fichas.yaml#/paths/~1api~1v1~1especies'}
+  /api/v1/especies/gestion: {$ref: 'contrato/fichas.yaml#/paths/~1api~1v1~1especies~1gestion'}
+  /api/v1/especies/gestion/{id}: {$ref: 'contrato/fichas.yaml#/paths/~1api~1v1~1especies~1gestion~1%7Bid%7D'}
+  /api/v1/especies/{identificador}: {$ref: 'contrato/fichas.yaml#/paths/~1api~1v1~1especies~1%7Bidentificador%7D'}
+  /api/v1/especies/{id}/aprobar: {$ref: 'contrato/fichas.yaml#/paths/~1api~1v1~1especies~1%7Bid%7D~1aprobar'}
+  /api/v1/especies/{id}/archivos/{archivoId}: {$ref: 'contrato/fichas.yaml#/paths/~1api~1v1~1especies~1%7Bid%7D~1archivos~1%7BarchivoId%7D'}
+  /api/v1/lugares: {$ref: 'contrato/fichas.yaml#/paths/~1api~1v1~1lugares'}
+  /api/v1/lugares/gestion: {$ref: 'contrato/fichas.yaml#/paths/~1api~1v1~1lugares~1gestion'}
+  /api/v1/lugares/gestion/{id}: {$ref: 'contrato/fichas.yaml#/paths/~1api~1v1~1lugares~1gestion~1%7Bid%7D'}
+  /api/v1/lugares/{identificador}: {$ref: 'contrato/fichas.yaml#/paths/~1api~1v1~1lugares~1%7Bidentificador%7D'}
+  /api/v1/lugares/{id}/aprobar: {$ref: 'contrato/fichas.yaml#/paths/~1api~1v1~1lugares~1%7Bid%7D~1aprobar'}
+  /api/v1/lugares/{id}/archivos/{archivoId}: {$ref: 'contrato/fichas.yaml#/paths/~1api~1v1~1lugares~1%7Bid%7D~1archivos~1%7BarchivoId%7D'}
+  /api/v1/regiones: {$ref: 'contrato/territorio.yaml#/paths/~1api~1v1~1regiones'}
+  /api/v1/regiones/{id}: {$ref: 'contrato/territorio.yaml#/paths/~1api~1v1~1regiones~1%7Bid%7D'}
+  /api/v1/regiones/{id}/provincias: {$ref: 'contrato/territorio.yaml#/paths/~1api~1v1~1regiones~1%7Bid%7D~1provincias'}
+  /api/v1/provincias: {$ref: 'contrato/territorio.yaml#/paths/~1api~1v1~1provincias'}
+  /api/v1/provincias/{id}: {$ref: 'contrato/territorio.yaml#/paths/~1api~1v1~1provincias~1%7Bid%7D'}
+  /api/v1/provincias/{id}/comunas: {$ref: 'contrato/territorio.yaml#/paths/~1api~1v1~1provincias~1%7Bid%7D~1comunas'}
+  /api/v1/comunas: {$ref: 'contrato/territorio.yaml#/paths/~1api~1v1~1comunas'}
+  /api/v1/comunas/{id}: {$ref: 'contrato/territorio.yaml#/paths/~1api~1v1~1comunas~1%7Bid%7D'}
+  /api/v1/coordenadas: {$ref: 'contrato/territorio.yaml#/paths/~1api~1v1~1coordenadas'}
+  /api/v1/coordenadas/{id}: {$ref: 'contrato/territorio.yaml#/paths/~1api~1v1~1coordenadas~1%7Bid%7D'}
+  /api/v1/archivos: {$ref: 'contrato/publicacion.yaml#/paths/~1api~1v1~1archivos'}
+  /api/v1/archivos/{id}: {$ref: 'contrato/publicacion.yaml#/paths/~1api~1v1~1archivos~1%7Bid%7D'}
+  /api/v1/archivos/cargas: {$ref: 'contrato/publicacion.yaml#/paths/~1api~1v1~1archivos~1cargas'}
+  /api/v1/archivos/cargas/confirmar: {$ref: 'contrato/publicacion.yaml#/paths/~1api~1v1~1archivos~1cargas~1confirmar'}
+  /api/v1/archivos/limpieza: {$ref: 'contrato/publicacion.yaml#/paths/~1api~1v1~1archivos~1limpieza'}
+  /api/v1/galeria: {$ref: 'contrato/publicacion.yaml#/paths/~1api~1v1~1galeria'}
+  /api/v1/galeria/{id}: {$ref: 'contrato/publicacion.yaml#/paths/~1api~1v1~1galeria~1%7Bid%7D'}
+  /api/v1/contenidos: {$ref: 'contrato/publicacion.yaml#/paths/~1api~1v1~1contenidos'}
+  /api/v1/contenidos/{id}: {$ref: 'contrato/publicacion.yaml#/paths/~1api~1v1~1contenidos~1%7Bid%7D'}
+  /api/v1/contenidos/aprobados: {$ref: 'contrato/publicacion.yaml#/paths/~1api~1v1~1contenidos~1aprobados'}
+  /api/v1/contenidos/{id}/aprobar: {$ref: 'contrato/publicacion.yaml#/paths/~1api~1v1~1contenidos~1%7Bid%7D~1aprobar'}
+components:
+  securitySchemes:
+    ApplicationToken:
+      type: apiKey
+      in: header
+      name: X-Application-Token
+      description: JWT de aplicación sin prefijo Bearer. Se vuelve a comprobar la vigencia del cliente y de sus permisos.
+    ClientBasic: {type: http, scheme: basic, description: Identificador y secreto de una aplicación confidencial registrada}
+  schemas:
+    SolicitudToken:
+      type: object
+      required: [grant_type]
+      properties:
+        grant_type: {type: string, const: client_credentials}
+        scope: {type: string, description: 'Ámbitos asignados, sin repetición, separados por espacios. Ausente o cadena vacía solicita todos los asignados; solo espacios no es válido.'}
+    ErrorOAuth:
+      type: object
+      required: [error, error_description]
+      properties:
+        error: {type: string, enum: [invalid_client, invalid_request, unsupported_grant_type, invalid_scope, temporarily_unavailable]}
+        error_description: {type: string}
+    Mensaje:
+      type: object
+      required: [message]
+      properties: {message: {type: string}}
+    ErrorPermisos:
+      type: object
+      required: [error, message]
+      properties: {error: {type: string, enum: [invalid_application_token, insufficient_scope]}, message: {type: string}}
+    ErrorValidacion:
+      type: object
+      required: [error, details]
+      properties:
+        error: {type: string, const: Error de validación}
+        details:
+          type: array
+          items: {type: object, required: [path, message], properties: {path: {type: string}, message: {type: string}}}
+  responses:
+    CuerpoExcesivo:
+      description: El analizador rechazó el tamaño del cuerpo o la cantidad de parámetros del formulario.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Mensaje'}}}
+    CodificacionNoAdmitida:
+      description: El analizador del cuerpo no admite el juego de caracteres o la codificación solicitada.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Mensaje'}}}
+    InvalidInput:
+      description: Fallo de validación (details) o error de solicitud (message).
+      content: {application/json: {schema: {oneOf: [{$ref: '#/components/schemas/ErrorValidacion'}, {$ref: '#/components/schemas/Mensaje'}]}}}
+    BadRequest:
+      description: Solicitud no procesable en su estado actual
+      content: {application/json: {schema: {$ref: '#/components/schemas/Mensaje'}}}
+    Unauthorized:
+      description: invalid_application_token; falta el token o no se pudo verificar el cliente y sus ámbitos vigentes.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorPermisos'}}}
+    Forbidden:
+      description: insufficient_scope; la credencial no concede el ámbito requerido para esta operación.
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorPermisos'}}}
+    NotFound:
+      description: No se encontró el recurso solicitado.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Mensaje'}}}
+    Conflict:
+      description: La operación entra en conflicto con el estado de los datos.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Mensaje'}}}
+    InternalError:
+      description: Fallo no recuperado; el mensaje no expone detalles internos.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Mensaje'}, example: {message: Error interno del servidor}}}
