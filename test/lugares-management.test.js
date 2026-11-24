@@ -6,7 +6,7 @@ const { createLugaresRepository } = require('../src/modules/lugares/lugares.repo
 const { createLugaresService } = require('../src/modules/lugares/lugares.service');
 const { createLugaresController } = require('../src/modules/lugares/lugares.controller');
 const { createLugaresRouter } = require('../src/modules/lugares/lugares.routes');
-const { createLugarSchema, updateLugarSchema, approvalLugarSchema, managementQuerySchema } = require('../src/modules/lugares/lugares.validation');
+const { createLugarSchema, updateLugarSchema, approvalLugarSchema, associationParamSchema, archivoAssociationSchema, managementQuerySchema } = require('../src/modules/lugares/lugares.validation');
 
 const valid = { id_comuna: 1, slug: 'quebrada-verde', nombre: 'Quebrada Verde', descripcion: 'Descripción válida' };
 function request(port, method, path, body, scope = 'catalog:read') {
@@ -104,4 +104,50 @@ test('servicio aísla la lectura pública y traduce ausencia y conflictos sin SQ
   assert.deepEqual(await lifecycle.approve(1, 'rechazado'), { id_lugar: 1, estado: 'rechazado' });
   const dependent = createLugaresService({ dataRepository: { remove: async () => { throw { code: 'ER_ROW_IS_REFERENCED_2', message: 'private SQL' }; } } });
   await assert.rejects(() => dependent.remove(1), { status: 409, message: 'No se puede eliminar el lugar porque tiene dependencias.' });
+});
+
+test('asociación de archivo de lugar exige escritura y cuerpo estricto', { concurrency: false }, async () => {
+  const calls = [];
+  const service = {
+    getAll: async () => [], getBySlug: async (slug) => ({ slug }), getManagementAll: async () => ({}), getManagementById: async () => ({}), create: async () => ({}), update: async () => ({}), approve: async () => ({}), remove: async () => ({}),
+    associateArchivo: async (...args) => { calls.push(args); return { id_lugar: args[0], id_archivo: args[1], ...args[2] }; }, removeArchivoAssociation: async () => ({ deleted: true }),
+  };
+  await withServer(service, async (port) => {
+    const body = { es_portada_lugar: true, orden_carrusel: 0 };
+    assert.equal((await request(port, 'PUT', '/7/archivos/9', body)).status, 403);
+    assert.deepEqual((await request(port, 'PUT', '/7/archivos/9', body, 'catalog:write')).body, { id_lugar: 7, id_archivo: 9, ...body });
+    assert.deepEqual(calls, [[7, 9, body]]);
+    for (const [path, invalid] of [['/0/archivos/9', body], ['/7/archivos/1.5', body], ['/7/archivos/9', { es_portada_lugar: 1, orden_carrusel: 0 }], ['/7/archivos/9', { es_portada_lugar: true, orden_carrusel: 65536 }]]) assert.equal((await request(port, 'PUT', path, invalid, 'catalog:write')).status, 400);
+    assert.deepEqual((await request(port, 'DELETE', '/7/archivos/9', undefined, 'catalog:write')).body, { deleted: true });
+  });
+  assert.deepEqual(associationParamSchema.parse({ id: '1', archivoId: '2' }), { id: 1, archivoId: 2 });
+  assert.equal(archivoAssociationSchema.safeParse({ es_portada_lugar: false, orden_carrusel: -1 }).success, false);
+});
+
+test('repositorio asocia lugar y archivo idempotentemente con SQL parametrizado', async () => {
+  const queries = [];
+  const repository = createLugaresRepository({ db: { query: async (sql, params) => {
+    queries.push({ sql, params });
+    if (sql.startsWith('SELECT id_lugar, id_archivo')) return [[{ id_lugar: 7, id_archivo: 9, es_portada_lugar: 1, orden_carrusel: 2 }]];
+    return [{ affectedRows: 1 }];
+  } } });
+  assert.deepEqual(await repository.upsertArchivoAssociation(7, 9, { es_portada_lugar: true, orden_carrusel: 2 }), { id_lugar: 7, id_archivo: 9, es_portada_lugar: true, orden_carrusel: 2 });
+  assert.match(queries[0].sql, /^INSERT INTO lugar_archivo .* ON DUPLICATE KEY UPDATE /);
+  assert.deepEqual(queries[0].params, [7, 9, 1, 2]);
+  assert.equal(await repository.removeArchivoAssociation(7, 9), true);
+  assert.match(queries[2].sql, /^DELETE FROM lugar_archivo WHERE id_lugar = \? AND id_archivo = \?$/);
+});
+
+test('servicio de asociación distingue ausencias, carrera FK y proyección pública', async () => {
+  const existing = { findManagementById: async () => ({ id_lugar: 7 }), upsertArchivoAssociation: async (id, file, data) => ({ id_lugar: id, id_archivo: file, ...data }), removeArchivoAssociation: async () => false };
+  const files = { findById: async () => ({ id_archivo: 9 }) };
+  const service = createLugaresService({ dataRepository: existing, filesRepository: files, filesService: { mapPublicFiles: async (items) => items.map(({ ruta, ...item }) => ({ ...item, url: `https://get.test/${ruta}` })) } });
+  assert.deepEqual(await service.associateArchivo(7, 9, { es_portada_lugar: false, orden_carrusel: 1 }), { id_lugar: 7, id_archivo: 9, es_portada_lugar: false, orden_carrusel: 1 });
+  await assert.rejects(() => service.removeArchivoAssociation(7, 9), { status: 404, message: 'La asociación de lugar y archivo no existe.' });
+  await assert.rejects(() => createLugaresService({ dataRepository: { ...existing, findManagementById: async () => null }, filesRepository: files }).associateArchivo(7, 9, {}), { status: 404, message: 'Lugar no encontrado' });
+  await assert.rejects(() => createLugaresService({ dataRepository: existing, filesRepository: { findById: async () => null } }).associateArchivo(7, 9, {}), { status: 404, message: 'Archivo no encontrado' });
+  await assert.rejects(() => createLugaresService({ dataRepository: { ...existing, upsertArchivoAssociation: async () => { throw { code: 'ER_NO_REFERENCED_ROW_2', message: 'private SQL' }; } }, filesRepository: files }).associateArchivo(7, 9, {}), { status: 404, message: 'El lugar o el archivo no existe.' });
+  await assert.rejects(() => createLugaresService({ dataRepository: { ...existing, upsertArchivoAssociation: async () => { throw new Error('private SQL'); } }, filesRepository: files }).associateArchivo(7, 9, {}), { status: 500, message: 'Error interno del servidor' });
+  const publicService = createLugaresService({ dataRepository: { findBySlug: async () => ({ slug: 'quebrada', archivos: [{ id_archivo: 9, ruta: 'archivos/foto/a.webp', es_portada_lugar: 1, orden_carrusel: 2 }] }) }, filesService: { mapPublicFiles: async (items) => items.map(({ ruta, ...item }) => ({ ...item, url: `https://get.test/${ruta}` })) } });
+  assert.deepEqual((await publicService.getBySlug('quebrada')).archivos, [{ id_archivo: 9, es_portada_lugar: 1, orden_carrusel: 2, url: 'https://get.test/archivos/foto/a.webp' }]);
 });

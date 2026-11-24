@@ -35,6 +35,16 @@ function createLugaresRepository({ db = database } = {}) {
     'DELETE FROM lugar WHERE id_lugar = ?',
     [id]
   ))[0].affectedRows > 0;
+  const toArchivoAssociationDto = ({ id_lugar, id_archivo, es_portada_lugar, orden_carrusel }) => ({ id_lugar, id_archivo, es_portada_lugar: Boolean(es_portada_lugar), orden_carrusel });
+  const findArchivoAssociation = async (id, archivoId) => {
+    const row = (await db.query('SELECT id_lugar, id_archivo, es_portada_lugar, orden_carrusel FROM lugar_archivo WHERE id_lugar = ? AND id_archivo = ?', [id, archivoId]))[0][0];
+    return row ? toArchivoAssociationDto(row) : null;
+  };
+  const upsertArchivoAssociation = async (id, archivoId, data) => {
+    await db.query('INSERT INTO lugar_archivo (id_lugar, id_archivo, es_portada_lugar, orden_carrusel) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE es_portada_lugar = VALUES(es_portada_lugar), orden_carrusel = VALUES(orden_carrusel)', [id, archivoId, Number(data.es_portada_lugar), data.orden_carrusel]);
+    return findArchivoAssociation(id, archivoId);
+  };
+  const removeArchivoAssociation = async (id, archivoId) => (await db.query('DELETE FROM lugar_archivo WHERE id_lugar = ? AND id_archivo = ?', [id, archivoId]))[0].affectedRows > 0;
   // Listado de los 8 sectores con su comuna, provincia, región y coordenada — RF04, RN03
   const findAll = async () => {
     const [rows] = await db.query(
@@ -94,7 +104,7 @@ function createLugaresRepository({ db = database } = {}) {
     return { ...lugar, archivos };
   };
 
-  return { findAll, findBySlug, findManagementAll, findManagementById, create, update, setEstado, remove };
+  return { findAll, findBySlug, findManagementAll, findManagementById, create, update, setEstado, remove, findArchivoAssociation, upsertArchivoAssociation, removeArchivoAssociation };
 }
 
 module.exports = { createLugaresRepository, ...createLugaresRepository() };

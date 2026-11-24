@@ -1,5 +1,6 @@
 const repository = require('./lugares.repository');
 const archivosService = require('../archivos/archivos.service');
+const archivosRepository = require('../archivos/archivos.repository');
 
 function operationalError(message, status) { return Object.assign(new Error(message), { status }); }
 function translatePersistenceError(error) {
@@ -13,8 +14,12 @@ function translateDeleteError(error) {
   }
   return error;
 }
+function translateAssociationError(error) {
+  if (['ER_NO_REFERENCED_ROW', 'ER_NO_REFERENCED_ROW_2'].includes(error.code)) return operationalError('El lugar o el archivo no existe.', 404);
+  return operationalError('Error interno del servidor', 500);
+}
 
-function createLugaresService({ dataRepository = repository, filesService = archivosService } = {}) {
+function createLugaresService({ dataRepository = repository, filesService = archivosService, filesRepository = archivosRepository } = {}) {
   return {
     getAll: async () => (await dataRepository.findAll()).map((lugar) => toPublicLugar(lugar)),
     getBySlug: async (slug) => {
@@ -44,6 +49,21 @@ function createLugaresService({ dataRepository = repository, filesService = arch
         if (!await dataRepository.remove(id)) throw operationalError('Lugar no encontrado', 404);
         return { deleted: true };
       } catch (error) { throw translateDeleteError(error); }
+    },
+    associateArchivo: async (id, archivoId, data) => {
+      try {
+        if (!await dataRepository.findManagementById(id)) throw operationalError('Lugar no encontrado', 404);
+        if (!await filesRepository.findById(archivoId)) throw operationalError('Archivo no encontrado', 404);
+        return await dataRepository.upsertArchivoAssociation(id, archivoId, data);
+      } catch (error) { if (error.status) throw error; throw translateAssociationError(error); }
+    },
+    removeArchivoAssociation: async (id, archivoId) => {
+      try {
+        if (!await dataRepository.findManagementById(id)) throw operationalError('Lugar no encontrado', 404);
+        if (!await filesRepository.findById(archivoId)) throw operationalError('Archivo no encontrado', 404);
+        if (!await dataRepository.removeArchivoAssociation(id, archivoId)) throw operationalError('La asociación de lugar y archivo no existe.', 404);
+        return { deleted: true };
+      } catch (error) { if (error.status) throw error; throw translateAssociationError(error); }
     },
   };
 }

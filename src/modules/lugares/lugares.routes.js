@@ -2,13 +2,15 @@ const express = require('express');
 const controller = require('./lugares.controller');
 const validate = require('../../middlewares/validate.middleware');
 const { requireScope } = require('../../auth/application.middleware');
-const { createLugarSchema, updateLugarSchema, approvalLugarSchema, idParamSchema, managementQuerySchema } = require('./lugares.validation');
+const { createLugarSchema, updateLugarSchema, approvalLugarSchema, idParamSchema, associationParamSchema, archivoAssociationSchema, managementQuerySchema } = require('./lugares.validation');
 
 function createLugaresRouter({ dataController = controller } = {}) {
   const router = express.Router();
   router.get('/gestion', requireScope('catalog:write'), validate(managementQuerySchema, 'query'), dataController.getManagementAll);
   router.get('/gestion/:id', requireScope('catalog:write'), validate(idParamSchema, 'params'), dataController.getManagementById);
   router.post('/', requireScope('catalog:write'), validate(createLugarSchema), dataController.create);
+  router.put('/:id/archivos/:archivoId', requireScope('catalog:write'), validate(associationParamSchema, 'params'), validate(archivoAssociationSchema), dataController.associateArchivo);
+  router.delete('/:id/archivos/:archivoId', requireScope('catalog:write'), validate(associationParamSchema, 'params'), dataController.removeArchivoAssociation);
   router.put('/:id', requireScope('catalog:write'), validate(idParamSchema, 'params'), validate(updateLugarSchema), dataController.update);
   router.patch('/:id/aprobar', requireScope('catalog:write'), validate(idParamSchema, 'params'), validate(approvalLugarSchema), dataController.approve);
   router.delete('/:id', requireScope('catalog:write'), validate(idParamSchema, 'params'), dataController.remove);
