@@ -8,11 +8,16 @@ function createFuentesController({ dataService = service } = {}) {
       } catch (error) { next(error); }
     },
     getById: async (req, res, next) => {
-      try {
-        const fuente = await dataService.getById(req.params.id);
-        if (!fuente) return res.status(404).json({ message: 'Fuente no encontrada' });
-        res.json(fuente);
-      } catch (error) { next(error); }
+      try { res.json(await dataService.getById(req.params.id)); } catch (error) { next(error); }
+    },
+    create: async (req, res, next) => {
+      try { res.status(201).json(await dataService.create(req.body)); } catch (error) { next(error); }
+    },
+    update: async (req, res, next) => {
+      try { res.json(await dataService.update(req.params.id, req.body)); } catch (error) { next(error); }
+    },
+    remove: async (req, res, next) => {
+      try { res.json(await dataService.remove(req.params.id)); } catch (error) { next(error); }
     },
   };
 }

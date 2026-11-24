@@ -130,6 +130,9 @@ test('los IDs inválidos responden 400 antes de acceder a los controladores', { 
   const controller = {
     getAll: (req, res) => res.json([]),
     getById: () => { calls += 1; },
+    create: () => { calls += 1; },
+    update: () => { calls += 1; },
+    remove: () => { calls += 1; },
     getRegiones: (req, res) => res.json([]),
     getProvinciasByRegionId: () => { calls += 1; },
     getComunasByProvinciaId: () => { calls += 1; },
