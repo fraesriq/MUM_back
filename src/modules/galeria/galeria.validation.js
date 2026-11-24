@@ -7,8 +7,8 @@ const enteroPositivo = (nombre) => z.string()
   .refine((value) => value > 0, `${nombre} debe ser mayor que cero`);
 
 const idParamSchema = z.object({
-  id: z.string().regex(/^\d+$/, 'El id debe ser numérico').transform(Number),
-});
+  id: z.string().regex(/^[1-9]\d*$/, 'El identificador debe ser un entero positivo').transform(Number).refine(Number.isSafeInteger, 'El identificador debe ser un entero positivo'),
+}).strict();
 
 const listQuerySchema = z.object({
   tipo: z.enum(TIPOS).optional(),

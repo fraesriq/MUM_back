@@ -12,9 +12,9 @@ const { createGaleriaService } = require('../src/modules/galeria/galeria.service
 const { createEspeciesService } = require('../src/modules/especies/especies.service');
 const { createLugaresService } = require('../src/modules/lugares/lugares.service');
 const { createLugaresRepository } = require('../src/modules/lugares/lugares.repository');
-const { createArchivoSchema, updateArchivoSchema, listQuerySchema: archivosQuerySchema } = require('../src/modules/archivos/archivos.validation');
-const { listQuerySchema: galeriaQuerySchema } = require('../src/modules/galeria/galeria.validation');
-const { createContenidoSchema, updateContenidoSchema } = require('../src/modules/contenidos/contenidos.validation');
+const { createArchivoSchema, updateArchivoSchema, idParamSchema: archivoIdParamSchema, listQuerySchema: archivosQuerySchema } = require('../src/modules/archivos/archivos.validation');
+const { idParamSchema: galeriaIdParamSchema, listQuerySchema: galeriaQuerySchema } = require('../src/modules/galeria/galeria.validation');
+const { createContenidoSchema, updateContenidoSchema, idParamSchema: contenidoIdParamSchema } = require('../src/modules/contenidos/contenidos.validation');
 const { requireScope } = require('../src/auth/application.middleware');
 const archivosRouter = require('../src/modules/archivos/archivos.routes');
 const galeriaRouter = require('../src/modules/galeria/galeria.routes');
@@ -526,4 +526,40 @@ test('la actualización valida la fila fusionada sin mutar tipo ni ruta', async 
   });
   await service.update(7, { titulo: 'Corregido' });
   assert.deepEqual(received, { id: 7, patch: { titulo: 'Corregido' } });
+});
+
+for (const [name, schema] of [['archivos', archivoIdParamSchema], ['galería', galeriaIdParamSchema], ['contenidos', contenidoIdParamSchema]]) {
+  test(`el esquema de ID de ${name} rechaza cero y enteros fuera de rango seguro`, () => {
+    assert.equal(schema.safeParse({ id: '0' }).success, false);
+    assert.equal(schema.safeParse({ id: '9007199254740992' }).success, false);
+    assert.deepEqual(schema.parse({ id: '1' }), { id: 1 });
+  });
+}
+
+test('los IDs cero responden 400 antes de acceder a servicios o repositorios', { concurrency: false }, async () => {
+  let server;
+  const archivosService = require('../src/modules/archivos/archivos.service');
+  const galeriaService = require('../src/modules/galeria/galeria.service');
+  const contenidosService = require('../src/modules/contenidos/contenidos.service');
+  const originals = { archivos: archivosService.getById, galeria: galeriaService.getById, contenidos: contenidosService.getById };
+  let calls = 0;
+  archivosService.getById = async () => { calls += 1; };
+  galeriaService.getById = async () => { calls += 1; };
+  contenidosService.getById = async () => { calls += 1; };
+  try {
+    const app = express();
+    app.use((req, res, next) => { req.application = { scopes: ['catalog:write'] }; next(); });
+    app.use('/archivos', archivosRouter);
+    app.use('/galeria', galeriaRouter);
+    app.use('/contenidos', contenidosRouter);
+    server = http.createServer(app); await listen(server);
+    const port = server.address().port;
+    for (const path of ['/archivos/0', '/galeria/0', '/contenidos/0']) assert.equal((await request(port, 'GET', path)).status, 400);
+    assert.equal(calls, 0);
+  } finally {
+    archivosService.getById = originals.archivos;
+    galeriaService.getById = originals.galeria;
+    contenidosService.getById = originals.contenidos;
+    if (server) await close(server);
+  }
 });

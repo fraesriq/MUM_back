@@ -59,7 +59,7 @@ Las altas de especies y lugares se crean en estado `pendiente`. La transición d
 | Fuente | `titulo` (1–255), `tipo` (`ficha`, `documento`, `institucion`, `web`, `otro`); opcionales: `autor_institucion` (hasta 200), `archivo_original` (hasta 500), `url` HTTP(S), `verificada` (booleano) | Cualquier subconjunto; los opcionales aceptan `null`. |
 | Coordenada | `latitud` (-90 a 90), `longitud` (-180 a 180), ambas con hasta 7 decimales; opcionales: `url_mapa` HTTP(S) anulable, `confirmada` (booleano) | Cualquier subconjunto. |
 
-Los campos de texto se recortan. Slugs de especie y lugar usan solo minúsculas, números y guiones. Los identificadores del cuerpo son números JSON, no cadenas.
+Los campos de texto descriptivos se recortan. Los slugs no se recortan: deben enviarse ya en formato exacto de minúsculas, números y guiones. Los identificadores del cuerpo son números JSON, no cadenas.
 
 ### Asociaciones archivo–ficha
 

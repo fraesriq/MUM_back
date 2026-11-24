@@ -47,7 +47,9 @@ const confirmUploadSchema = z.object({
   permiso: z.enum(PERMISOS).optional().default('pendiente'),
   en_galeria_general: z.boolean().optional().default(false),
 }).strict().superRefine(requireAltText);
-const idParamSchema = z.object({ id: z.string().regex(/^\d+$/, 'El id debe ser numérico').transform(Number) });
+const idParamSchema = z.object({
+  id: z.string().regex(/^[1-9]\d*$/, 'El identificador debe ser un entero positivo').transform(Number).refine(Number.isSafeInteger, 'El identificador debe ser un entero positivo'),
+}).strict();
 const listQuerySchema = z.object({
   tipo: z.enum(TIPOS).optional(),
   page: enteroPositivo('page').optional().default(1),
