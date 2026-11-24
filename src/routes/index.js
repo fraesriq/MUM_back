@@ -9,6 +9,7 @@ const contenidosRoutes = require('../modules/contenidos/contenidos.routes');
 const archivosRoutes = require('../modules/archivos/archivos.routes');
 const fuentesRoutes = require('../modules/fuentes/fuentes.routes');
 const geografiaRoutes = require('../modules/geografia/geografia.routes');
+const coordenadasRoutes = require('../modules/coordenadas/coordenadas.routes');
 
 router.use('/categorias', categoriasRoutes);
 router.use('/especies', especiesRoutes);
@@ -17,6 +18,7 @@ router.use('/galeria', galeriaRoutes);
 router.use('/contenidos', contenidosRoutes);
 router.use('/archivos', archivosRoutes);
 router.use('/fuentes', fuentesRoutes);
+router.use('/coordenadas', coordenadasRoutes);
 router.use('/', geografiaRoutes);
 
 module.exports = router;
