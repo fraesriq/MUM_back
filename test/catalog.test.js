@@ -11,6 +11,7 @@ const { createArchivosRepository } = require('../src/modules/archivos/archivos.r
 const { createGaleriaService } = require('../src/modules/galeria/galeria.service');
 const { createEspeciesService } = require('../src/modules/especies/especies.service');
 const { createLugaresService } = require('../src/modules/lugares/lugares.service');
+const { createLugaresRepository } = require('../src/modules/lugares/lugares.repository');
 const { createArchivoSchema, updateArchivoSchema, listQuerySchema: archivosQuerySchema } = require('../src/modules/archivos/archivos.validation');
 const { listQuerySchema: galeriaQuerySchema } = require('../src/modules/galeria/galeria.validation');
 const { createContenidoSchema, updateContenidoSchema } = require('../src/modules/contenidos/contenidos.validation');
@@ -425,13 +426,42 @@ test('especies y lugares firman archivos públicos y no exponen ruta', async () 
   assert.equal(especie.archivos[0].url_expires_in, 3600);
 });
 
+test('el repositorio de lugares consulta la jerarquía comuna, provincia y región sin ciudad', async () => {
+  const queries = [];
+  const repository = createLugaresRepository({
+    db: { query: async (sql, params) => {
+      queries.push({ sql, params });
+      if (sql.includes('FROM lugar_archivo')) return [[]];
+      if (sql.includes('WHERE l.slug = ?')) return [[{ slug: 'costa', coordenada_confirmada: true }]];
+      return [[]];
+    } },
+  });
+
+  await repository.findAll();
+  await repository.findBySlug('costa');
+
+  const geographyQueries = queries.slice(0, 2);
+  for (const { sql } of geographyQueries) {
+    assert.match(sql, /JOIN comuna c ON c\.id_comuna = l\.id_comuna/);
+    assert.match(sql, /JOIN provincia p ON p\.id_provincia = c\.id_provincia/);
+    assert.match(sql, /JOIN region r ON r\.id_region = p\.id_region/);
+    assert.match(sql, /c\.nombre AS comuna/);
+    assert.match(sql, /p\.nombre AS provincia/);
+    assert.match(sql, /r\.nombre AS region/);
+    assert.doesNotMatch(sql, /\bciudad\b|id_ciudad/i);
+  }
+  assert.deepEqual(queries[1].params, ['costa']);
+  assert.match(queries[2].sql, /a\.permiso = 'autorizado'/);
+});
+
 test('los DTO públicos de especies y lugares eliminan identificadores y estados internos', async () => {
   const filesService = { mapPublicFiles: async () => [] };
   const especie = await createEspeciesService({ dataRepository: { findAll: async () => [], findBySlug: async () => ({ id_especie: 1, id_categoria: 2, id_fuente: 3, estado: 'aprobado', slug: 'ave', archivos: [] }) }, filesService }).getBySlug('ave');
-  const lugarService = createLugaresService({ dataRepository: { findAll: async () => [{ id_lugar: 1, id_ciudad: 2, id_coordenada: 3, id_fuente: 4, estado: 'aprobado', coordenada_confirmada: false, slug: 'costa', latitud: 1, longitud: 2, url_mapa: 'privado' }], findBySlug: async () => null }, filesService });
+  const lugarService = createLugaresService({ dataRepository: { findAll: async () => [{ id_lugar: 1, id_comuna: 2, id_coordenada: 3, id_fuente: 4, estado: 'aprobado', coordenada_confirmada: false, slug: 'costa', comuna: 'Comuna', provincia: 'Provincia', region: 'Región', latitud: 1, longitud: 2, url_mapa: 'privado' }], findBySlug: async () => null }, filesService });
   const [lugar] = await lugarService.getAll();
   for (const field of ['id_especie', 'id_categoria', 'id_fuente', 'estado']) assert.equal(field in especie, false);
-  for (const field of ['id_lugar', 'id_ciudad', 'id_coordenada', 'id_fuente', 'estado', 'coordenada_confirmada']) assert.equal(field in lugar, false);
+  for (const field of ['id_lugar', 'id_comuna', 'id_coordenada', 'id_fuente', 'estado', 'coordenada_confirmada']) assert.equal(field in lugar, false);
+  assert.deepEqual({ comuna: lugar.comuna, provincia: lugar.provincia, region: lugar.region }, { comuna: 'Comuna', provincia: 'Provincia', region: 'Región' });
   assert.deepEqual({ latitud: lugar.latitud, longitud: lugar.longitud, url_mapa: lugar.url_mapa }, { latitud: null, longitud: null, url_mapa: null });
 });
 

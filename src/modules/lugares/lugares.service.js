@@ -12,7 +12,7 @@ function createLugaresService({ dataRepository = repository, filesService = arch
 }
 
 function toPublicLugar(lugar) {
-  const { id_lugar, id_ciudad, id_coordenada, id_fuente, estado, coordenada_confirmada, ...publicLugar } = lugar;
+  const { id_lugar, id_comuna, id_coordenada, id_fuente, estado, coordenada_confirmada, ...publicLugar } = lugar;
   if (!coordenada_confirmada) return { ...publicLugar, latitud: null, longitud: null, url_mapa: null };
   return publicLugar;
 }
