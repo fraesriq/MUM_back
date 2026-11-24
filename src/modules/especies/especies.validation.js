@@ -18,6 +18,7 @@ const fields = {
 };
 const createEspecieSchema = z.object(fields).strict();
 const updateEspecieSchema = z.object(Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, key === 'id_categoria' || key === 'descripcion' ? value.optional() : value]))).strict().refine((data) => Object.keys(data).length > 0, 'Debe enviar al menos un campo para actualizar');
+const approvalEspecieSchema = z.object({ estado: z.enum(['aprobado', 'rechazado']) }).strict();
 const parsedPositive = (name) => z.string().regex(/^\d+$/, `${name} debe ser un entero positivo`).transform(Number).refine((value) => Number.isSafeInteger(value) && value > 0, `${name} debe ser un entero positivo seguro`);
 const idParamSchema = z.object({ id: parsedPositive('id') }).strict();
 const positiveQuery = (name) => parsedPositive(name);
@@ -31,6 +32,7 @@ const managementQuerySchema = z.object({
 module.exports = {
   createEspecieSchema,
   updateEspecieSchema,
+  approvalEspecieSchema,
   idParamSchema,
   managementQuerySchema,
 };

@@ -27,6 +27,12 @@ function createEspeciesController({ dataService = service } = {}) {
     update: async (req, res, next) => {
       try { res.json(await dataService.update(req.params.id, req.body)); } catch (error) { next(error); }
     },
+    approve: async (req, res, next) => {
+      try { res.json(await dataService.approve(req.params.id, req.body.estado)); } catch (error) { next(error); }
+    },
+    remove: async (req, res, next) => {
+      try { res.json(await dataService.remove(req.params.id)); } catch (error) { next(error); }
+    },
   };
 }
 

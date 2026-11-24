@@ -25,7 +25,15 @@ function createEspeciesRepository({ database = db } = {}) {
     await database.query(`UPDATE especie SET ${fields.map((field) => `${field} = ?`).join(', ')} WHERE id_especie = ?`, [...fields.map((field) => data[field]), id]);
     return findManagementById(id);
   };
-  return { findManagementAll, findManagementById, create, update };
+  const setEstado = async (id, estado) => (await database.query(
+    'UPDATE especie SET estado = ? WHERE id_especie = ?',
+    [estado, id]
+  ))[0].affectedRows > 0;
+  const remove = async (id) => (await database.query(
+    'DELETE FROM especie WHERE id_especie = ?',
+    [id]
+  ))[0].affectedRows > 0;
+  return { findManagementAll, findManagementById, create, update, setEstado, remove };
 }
 
 // Listado con filtro opcional por categoría (slug) — RF03

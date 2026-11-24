@@ -8,6 +8,13 @@ function translatePersistenceError(error) {
   return error;
 }
 
+function translateDeleteError(error) {
+  if (['ER_ROW_IS_REFERENCED', 'ER_ROW_IS_REFERENCED_2'].includes(error.code)) {
+    return operationalError('No se puede eliminar la especie porque tiene dependencias.', 409);
+  }
+  return error;
+}
+
 function createEspeciesService({ dataRepository = repository, filesService = archivosService } = {}) {
   return {
     getAll: (filtros) => dataRepository.findAll(filtros),
@@ -30,6 +37,17 @@ function createEspeciesService({ dataRepository = repository, filesService = arc
       const especie = await dataRepository.findManagementById(id);
       if (!especie) throw operationalError('Especie no encontrada', 404);
       try { return await dataRepository.update(id, data); } catch (error) { throw translatePersistenceError(error); }
+    },
+    approve: async (id, estado) => {
+      const especie = await dataRepository.findManagementById(id);
+      if (!especie || !await dataRepository.setEstado(id, estado)) throw operationalError('Especie no encontrada', 404);
+      return { ...especie, estado };
+    },
+    remove: async (id) => {
+      try {
+        if (!await dataRepository.remove(id)) throw operationalError('Especie no encontrada', 404);
+        return { deleted: true };
+      } catch (error) { throw translateDeleteError(error); }
     },
   };
 }
