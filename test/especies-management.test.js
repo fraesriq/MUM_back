@@ -180,3 +180,26 @@ test('la proyección pública de archivos de especie conserva portada y orden', 
   });
   assert.deepEqual((await service.getBySlug('zorro')).archivos, [{ id_archivo: 9, es_portada_ficha: 1, orden_carrusel: 2, url: 'https://get.test/archivos/foto/a.webp' }]);
 });
+
+test('public species list groups authorized downloads per species without per-species queries', async () => {
+  const first = { slug: 'garza', nombre_comun: 'Garza', categoria_slug: 'aves' };
+  const second = { slug: 'pato', nombre_comun: 'Pato', categoria_slug: 'aves' };
+  const database = { query: async (sql, params) => {
+    if (sql.includes('FROM especie_archivo')) {
+      assert.match(sql, /a\.permiso = 'autorizado'/);
+      assert.match(sql, /ORDER BY ea\.id_especie, ea\.es_portada_ficha DESC, ea\.orden_carrusel ASC/);
+      assert.deepEqual(params, [[8, 5]]);
+      return [[{ id_especie: 8, id_archivo: 2, ruta: 'a.jpg', es_portada_ficha: 1, orden_carrusel: 0 }]];
+    }
+    assert.match(sql, /e\.estado = 'aprobado'/);
+    assert.match(sql, /c\.slug = \?/);
+    assert.deepEqual(params, ['aves']);
+    return [[{ id_especie: 8, ...first }, { id_especie: 5, ...second }]];
+  } };
+  const service = createEspeciesService({ dataRepository: createEspeciesRepository({ database }),
+    filesService: { mapPublicFiles: async items => items.map(({ ruta, ...file }) => ({ ...file, url: `https://example.test/${ruta}`, url_expires_in: 300 })) } });
+  assert.deepEqual(await service.getAll({ categoria: 'aves' }), [
+    { ...first, archivos: [{ id_archivo: 2, es_portada_ficha: 1, orden_carrusel: 0, url: 'https://example.test/a.jpg', url_expires_in: 300 }] },
+    { ...second, archivos: [] },
+  ]);
+});

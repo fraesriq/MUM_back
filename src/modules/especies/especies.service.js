@@ -23,7 +23,10 @@ function translateAssociationError(error) {
 
 function createEspeciesService({ dataRepository = repository, filesService = archivosService, filesRepository = archivosRepository } = {}) {
   return {
-    getAll: (filtros) => dataRepository.findAll(filtros),
+    getAll: async (filtros) => {
+      const species = await dataRepository.findAll(filtros);
+      return Promise.all(species.map(async (item) => ({ ...item, archivos: await filesService.mapPublicFiles(item.archivos) })));
+    },
     getBySlug: async (slug) => {
       const especie = await dataRepository.findBySlug(slug);
       if (!especie) return null;

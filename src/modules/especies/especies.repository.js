@@ -43,13 +43,13 @@ function createEspeciesRepository({ database = db } = {}) {
     return findArchivoAssociation(id, archivoId);
   };
   const removeArchivoAssociation = async (id, archivoId) => (await database.query('DELETE FROM especie_archivo WHERE id_especie = ? AND id_archivo = ?', [id, archivoId]))[0].affectedRows > 0;
-  return { findManagementAll, findManagementById, create, update, setEstado, remove, findArchivoAssociation, upsertArchivoAssociation, removeArchivoAssociation };
+  return { findAll: (filters) => listPublicSpecies(database, filters), findManagementAll, findManagementById, create, update, setEstado, remove, findArchivoAssociation, upsertArchivoAssociation, removeArchivoAssociation };
 }
 
 // Listado con filtro opcional por categoría (slug) — RF03
-async function findAll({ categoria } = {}) {
+async function listPublicSpecies(database, { categoria } = {}) {
   let sql = `
-    SELECT e.slug, e.nombre_comun, e.nombre_cientifico, e.descripcion,
+    SELECT e.id_especie, e.slug, e.nombre_comun, e.nombre_cientifico, e.descripcion,
            c.nombre AS categoria, c.slug AS categoria_slug
     FROM especie e
     JOIN categoria c ON c.id_categoria = e.id_categoria
@@ -64,8 +64,21 @@ async function findAll({ categoria } = {}) {
 
   sql += ' ORDER BY c.orden ASC, e.nombre_comun ASC';
 
-  const [rows] = await db.query(sql, params);
-  return rows;
+  const [rows] = await database.query(sql, params);
+  if (!rows.length) return [];
+
+  const [files] = await database.query(`
+    SELECT ea.id_especie, a.id_archivo, a.tipo, a.titulo, a.ruta, a.texto_alt, a.credito,
+           ea.es_portada_ficha, ea.orden_carrusel
+    FROM especie_archivo ea
+    JOIN archivo a ON a.id_archivo = ea.id_archivo
+    WHERE ea.id_especie IN (?) AND a.permiso = 'autorizado'
+    ORDER BY ea.id_especie, ea.es_portada_ficha DESC, ea.orden_carrusel ASC, a.id_archivo ASC`,
+  [rows.map(row => row.id_especie)]);
+
+  const species = new Map(rows.map(({ id_especie, ...summary }) => [id_especie, { ...summary, archivos: [] }]));
+  for (const { id_especie, ...file } of files) species.get(id_especie).archivos.push(file);
+  return [...species.values()];
 }
 
 // Ficha por slug con portada y carrusel multimedia — RF02, RF05
@@ -99,4 +112,4 @@ async function findBySlug(slug) {
   return { ...especie, archivos };
 }
 
-module.exports = { createEspeciesRepository, findAll, findBySlug, ...createEspeciesRepository() };
+module.exports = { createEspeciesRepository, findBySlug, ...createEspeciesRepository() };

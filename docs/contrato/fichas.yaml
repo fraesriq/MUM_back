@@ -417,7 +417,7 @@ components:
       examples: [{items: [], page: 1, limit: 20, total: 0}]
     ResumenEspecie:
       type: object
-      required: [slug, nombre_comun, nombre_cientifico, descripcion, categoria, categoria_slug]
+      required: [slug, nombre_comun, nombre_cientifico, descripcion, categoria, categoria_slug, archivos]
       properties:
         slug: {type: string}
         nombre_comun: {type: string}
@@ -425,7 +425,8 @@ components:
         descripcion: {type: string}
         categoria: {type: string}
         categoria_slug: {type: string}
-      examples: [{slug: siete-colores, nombre_comun: Siete colores, nombre_cientifico: null, descripcion: Ave de humedal., categoria: Aves, categoria_slug: aves}]
+        archivos: {type: array, description: Solo autorizados; portada primero y después orden_carrusel ascendente., items: {$ref: '#/components/schemas/ArchivoPublicoEspecie'}}
+      examples: [{slug: siete-colores, nombre_comun: Siete colores, nombre_cientifico: null, descripcion: Ave de humedal., categoria: Aves, categoria_slug: aves, archivos: []}]
     ResumenLugar:
       type: object
       description: Sin coordenada confirmada, latitud, longitud y url_mapa son null. La consulta devuelve los valores del controlador SQL sin conversión explícita a número.
@@ -450,14 +451,13 @@ components:
         fuente_autor: {type: [string, 'null']}
     DetalleEspecie:
       allOf: [{$ref: '#/components/schemas/ResumenEspecie'}, {$ref: '#/components/schemas/FuenteFicha'}]
-      required: [distribucion_geografica, habitat_ecosistema, alimentacion, habito, reproduccion, archivos]
+      required: [distribucion_geografica, habitat_ecosistema, alimentacion, habito, reproduccion]
       properties:
         distribucion_geografica: {type: [string, 'null']}
         habitat_ecosistema: {type: [string, 'null']}
         alimentacion: {type: [string, 'null']}
         habito: {type: [string, 'null']}
         reproduccion: {type: [string, 'null']}
-        archivos: {type: array, description: Solo autorizados; portada primero y después orden_carrusel ascendente., items: {$ref: '#/components/schemas/ArchivoPublicoEspecie'}}
       examples:
         - {slug: siete-colores, nombre_comun: Siete colores, nombre_cientifico: null, descripcion: Ave de humedal., categoria: Aves, categoria_slug: aves, distribucion_geografica: null, habitat_ecosistema: Humedal, alimentacion: null, habito: null, reproduccion: null, fuente_titulo: null, fuente_autor: null, archivos: []}
     DetalleLugar:
